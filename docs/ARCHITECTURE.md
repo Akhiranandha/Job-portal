@@ -6,6 +6,7 @@ state**, with deltas explicitly marked. Tags:
 - `[BUILT]`     — implemented and matches target
 - `[PARTIAL]`   — implemented but incomplete or has known gaps
 - `[VIOLATED]`  — implemented incorrectly; scheduled for Phase 0 fix
+- `[DEFERRED]`  — known gap, fix consciously postponed (see ROADMAP)
 - `[PLANNED]`   — not yet built; spec only
 
 ---
@@ -77,7 +78,8 @@ Owns `auth_db`. Issues JWTs, manages credentials.
 - `delete-user` → soft-deletes User (sets `isActive=false`)
 
 **Known issues:**
-- `[VIOLATED NFR-1.5]` Has dev fallback secret. Should fail-fast in non-dev.
+*(none currently — Phase 0 fixes have closed the open violations on
+this service)*
 
 ### User Service `:8081` [BUILT, PARTIAL]
 Owns `userdb`. User profile CRUD.
@@ -99,9 +101,10 @@ FR-1.11.
 - Publishes `UserDeleteEvent` to `delete-user` on delete
 
 **Known issues:**
-- `[VIOLATED NFR-1.6]` Trusts `X-User-Email` and `X-User-Role` headers
+- `[DEFERRED NFR-1.6]` Trusts `X-User-Email` and `X-User-Role` headers
   without verifying request came from gateway. Spoofable if port 8081
-  is reachable directly.
+  is reachable directly. Deferred to Phase 5 — mitigated today by
+  network-level access control (services bind to localhost in dev).
 
 **Recently fixed:**
 - `[BUILT NFR-1.8]` Self-targeted endpoints (`/api/users/me`) take
@@ -213,8 +216,9 @@ be wiped and rebuilt by replaying events.
   Fine-grained authz (FR-1.9, NFR-1.7, NFR-1.8) lives in each
   service.
 - Downstream services receive `X-User-Email` and `X-User-Role` from
-  gateway. **`[TARGET]`** These headers must be signed by gateway and
-  verified by services (NFR-1.6).
+  gateway. **`[DEFERRED]`** Headers should be HMAC-signed by gateway
+  and verified by services (NFR-1.6) — postponed to Phase 5; today
+  services trust the headers without verification.
 
 ### Event topology
 
@@ -288,16 +292,16 @@ ONLY when user explicitly saves the form.
 
 ## Phase 0: Known violations to fix
 
-These are intentional violations. Do not fix without coordinating.
-
 | ID | Issue | Fix approach |
 |---|---|---|
 | ~~NFR-1.3~~ | ~~Raw passwords on Kafka~~ | ✅ done — User Service BCrypts; event carries `passwordHash` |
-| NFR-1.5 | JWT secret has dev fallback in prod | `@PostConstruct` validation; fail-fast unless `spring.profiles.active=dev` |
-| NFR-1.6 | Services trust spoofable gateway headers | Gateway HMAC-signs the headers + a timestamp; services verify signature |
+| ~~NFR-1.5~~ | ~~JWT secret has dev fallback in prod~~ | ✅ done — `@PostConstruct` validator in auth-service and gateway aborts startup unless the `dev` profile is active or a non-default secret is supplied |
+| NFR-1.6 | Services trust spoofable gateway headers | ⏸️ deferred to Phase 5 — gateway will HMAC-sign headers + timestamp, services verify |
 | ~~NFR-1.8~~ | ~~Any user can edit any profile~~ | ✅ done — self-targeted `/me` endpoints take identity from gateway header |
 
-See `ROADMAP.md` for Phase 0 sequencing.
+Phase 0 is effectively closed (3 of 4 NFRs done; NFR-1.6 deferred).
+See `ROADMAP.md` Phase 5 for the entry covering NFR-1.6 and other
+deferred work.
 
 ---
 

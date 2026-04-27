@@ -70,8 +70,9 @@ CREATE TABLE users (
 - Already exists — this is documentation of current state.
 - After Phase 0 (NFR-1.3), `password` is hashed by User Service and
   arrives via event already-hashed. Auth Service no longer hashes.
-- After Phase 0 (NFR-1.6), service additionally verifies HMAC
-  signature on requests; no schema change needed.
+- After NFR-1.6 lands (deferred to Phase 5 stretch), service
+  additionally verifies HMAC signature on requests; no schema change
+  needed.
 
 ---
 
