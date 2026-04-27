@@ -106,11 +106,11 @@ For *how*, see `ARCHITECTURE.md`.
 - **NFR-1.1** All external traffic goes through the API gateway
 - **NFR-1.2** Passwords hashed with BCrypt strength ≥ 10 ✅ done
 - **NFR-1.3** Raw passwords never travel over Kafka or appear in logs ✅ done (User Service hashes; `UserRegistrationEvent.passwordHash` carries the hash)
-- **NFR-1.4** JWT access tokens short-lived (≤15 min); refresh tokens rotated *(refresh deferred)*
-- **NFR-1.5** JWT secret loaded from environment; non-dev startup fails if unset ❌ **violated**
-- **NFR-1.6** Downstream services verify the request came from the gateway (not just trust headers) ❌ **violated**
+- **NFR-1.4** JWT access tokens short-lived (≤3 hours); refresh tokens rotated *(refresh deferred)*
+- **NFR-1.5** JWT secret loaded from environment; non-dev startup fails if unset ✅ done (auth-service and gateway both fail-fast in `@PostConstruct` when the dev default is in use outside the `dev` profile, or the secret is blank/<32 bytes)
+- **NFR-1.6** Downstream services verify the request came from the gateway (not just trust headers) ⏸️ **deferred to Phase 5**
 - **NFR-1.7** Role-based authorization enforced at service layer, not just gateway
-- **NFR-1.8** Users can only modify their own resources unless ADMIN ✅ done (User Service; defense-in-depth — header signature verification still pending under NFR-1.6)
+- **NFR-1.8** Users can only modify their own resources unless ADMIN ✅ done (User Service; defense-in-depth — header signature verification deferred to Phase 5 under NFR-1.6)
 - **NFR-1.9** CORS configured explicitly on gateway
 - **NFR-1.10** Rate limiting on `/auth/login` and `/auth/register`
 - **NFR-1.11** Input validation on every endpoint; entities never exposed externally ✅ done

@@ -35,9 +35,6 @@ Plus housekeeping (still open):
 - Add basic rate limiting on `/auth/login` (NFR-1.10) — needs Redis
 - Move hardcoded MySQL credentials out of `application.properties`
 - `/auth/password` → require authentication
-- NFR-1.4: shorten `jwt.expiration` in auth-service from 86400000 (24h)
-  to ≤ 900000 (15 min). Refresh tokens are deferred (FR-1.5, Phase 5);
-  until then, users re-login every 15 min — acceptable per the deferral.
 
 **Exit criteria:** the 3 fixed NFRs marked `[BUILT]` in
 `ARCHITECTURE.md`; NFR-1.6 marked `[DEFERRED]`. Phase 1 can start.

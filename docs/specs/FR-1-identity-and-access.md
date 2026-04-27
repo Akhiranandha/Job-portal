@@ -16,7 +16,7 @@ Let candidates, recruiters, and admins create accounts, authenticate, and access
 - (NFR-1.1) All external traffic **must** flow through the API gateway; services are not directly reachable from outside.
 - (NFR-1.2) Passwords **must** be hashed with BCrypt at strength ≥ 10.
 - (NFR-1.3) Raw passwords **must not** travel over Kafka or appear in logs. The User Service hashes the password and the `UserRegistrationEvent.passwordHash` carries only the hash.
-- (NFR-1.4) JWT access tokens **must** be short-lived (≤ 15 minutes). Refresh tokens are deferred (FR-1.5).
+- (NFR-1.4) JWT access tokens **must** be short-lived (≤ 3 hours). Refresh tokens are deferred (FR-1.5).
 - (NFR-1.5) The JWT secret **must** be loaded from environment variables. Auth Service and Gateway **must** fail fast at startup outside the `dev` profile if the secret is the dev default, blank, or shorter than 32 bytes.
 - (NFR-1.7) Role-based authorization **must** be enforced at the service layer, not only at the gateway.
 - (NFR-1.9) The gateway **must** have an explicit CORS configuration. *(open — Phase 0 housekeeping)*
@@ -85,7 +85,7 @@ Let candidates, recruiters, and admins create accounts, authenticate, and access
 - **Open question:** Should `/auth/password` require JWT? Listed as Phase 0 housekeeping in `docs/ROADMAP.md`; currently open per current security config.
 - **Open question:** Hardcoded MySQL credentials in `application.properties` — Phase 0 housekeeping item, still open.
 - **Open question:** Account locking after N failed login attempts — not in PRODUCT.md. Decide before Phase 5 if this becomes a stretch goal.
-- **Edge case (UI):** JWT expires mid-session (NFR-1.4 caps the access token at 15 min and refresh tokens are deferred). The axios response interceptor **must** detect 401 from the gateway and redirect to `/login`, surfacing a Bootstrap toast "Session expired — please log in again" instead of dropping the user on a blank page.
+- **Edge case (UI):** JWT expires mid-session (NFR-1.4 caps the access token at 3 hours and refresh tokens are deferred). The axios response interceptor **must** detect 401 from the gateway and redirect to `/login`, surfacing a Bootstrap toast "Session expired — please log in again" instead of dropping the user on a blank page.
 - **Edge case (UI):** Registration eventual consistency. After a successful register response, an immediate login may fail because the `user-registration` event has not yet been consumed by Auth Service. The login form **should** retry once after a short delay before showing "Credentials not yet provisioned, please try again."
 - **Open question (UI):** JWT in `localStorage` is XSS-readable; an httpOnly cookie is safer but requires a CSRF strategy and a server-side session endpoint. v1 ships with `localStorage` for simplicity; revisit before any production deploy (Phase 5).
 - **Open question (UI):** Should the role toggle on `/register` be a segmented control or a radio group? Bootstrap supports both; pick during Phase 3 implementation.

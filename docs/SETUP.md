@@ -209,7 +209,7 @@ If this works, the system is up.
 | `Communications link failure` on startup | MySQL not running or wrong creds | Start MySQL; verify creds match `application.properties` |
 | `Address already in use: bind` | Port conflict (8080/8081/8082/8761) | Kill the process holding the port, or change the service's `server.port` |
 | Kafka topic missing | `kafka-init` didn't run or failed | `docker compose logs kafka-init`, recreate with `docker compose up -d --force-recreate kafka-init` |
-| Gateway returns `401` for `/api/users/me` | Missing or expired JWT | JWT currently expires after 24 hours (NFR-1.4 housekeeping in [ROADMAP.md](ROADMAP.md) — should be 15 min); log in again |
+| Gateway returns `401` for `/api/users/me` | Missing or expired JWT | JWT expires after 3 hours per NFR-1.4; log in again to get a fresh token (refresh tokens are deferred to Phase 5) |
 
 ## 10. What this doc does not cover
 
