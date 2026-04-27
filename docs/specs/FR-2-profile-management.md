@@ -20,6 +20,13 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
 - (NFR-6.2) Errors **must** follow the standard error response shape from `CONVENTIONS.md`.
 - (NFR-6.3) The API boundary **must** expose DTOs (`UserResponse`, `UserUpdateRequest`, etc.), never JPA entities.
 - (NFR-1.11) Every request DTO **must** carry Bean Validation annotations (`@NotNull`, `@Email`, `@Size`, `@Past`).
+- (UI) The `/profile` route **must** show a read-only view of the caller's profile; the `/profile/edit` route **must** present the editable form using Bootstrap nav-tabs.
+- (UI) For candidates, the edit tabs **must** be: **Basic info**, **Skills**, **Experience**, **Education**, **Job preferences**. For recruiters, the edit tabs **must** be: **Basic info**, **Company** (`company_name`, `designation`, `company_website`).
+- (UI) Each tab **must** have its own Save button; saving a tab calls `PUT /api/users/me` (or the sub-resource endpoint, when added) with only that tab's fields. Unsaved changes on tab switch **must** trigger a confirmation modal.
+- (UI) Skills **must** be edited via a tag-input control (type a skill, press Enter to add, click the × to remove).
+- (UI) Experience and Education entries **must** be rendered as a stacked list of cards with **Add**, **Edit**, and **Delete** actions per entry.
+- (UI) Job preferences **must** present: multi-select for `locations`, two number inputs for `salaryMin`/`salaryMax`, a Bootstrap `<Form.Switch>` for `remote`, and a multi-select (or checkbox group) for `employmentTypes`.
+- (UI) Field-level validation errors from the API **must** surface as Bootstrap inline feedback, not as a top-of-page alert.
 
 ## User Stories
 
@@ -29,6 +36,11 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
 - As a recruiter, I want to set my company name, designation, and website so that my job postings carry credible employer information.
 - As an admin, I want to list all users so that I can audit registrations and roles. *(deferred admin actions on arbitrary users — see Out of Scope)*
 - As any authenticated user, I want a `403` if I attempt to read or modify someone else's profile so that I trust my own data is private.
+- As a candidate on `/profile/edit`, I want tabs across the top so that I can focus on Skills without scrolling past Basic Info.
+- As a candidate on the Skills tab, I want to type a skill and press Enter to add it as a chip so that I can build my list quickly without nested forms.
+- As a candidate, I want to add a new Experience entry inline without losing my place on the page so that I don't have to re-find the section after saving.
+- As a recruiter, I want a Company tab where my employer details live so that they're discoverable without hunting through candidate-only fields.
+- As a candidate switching tabs with unsaved edits, I want a confirmation modal so that I don't silently lose work.
 
 ## Technical Details
 
@@ -52,6 +64,12 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
   - Produced (planned): `ProfileUpdatedEvent` on `profile-updated`, consumed by Matching Service to refresh ranked-list indexes.
 - **Cross-service interactions:** Identity is taken from the `X-User-Email` header injected by the gateway (per `CONVENTIONS.md` self-targeted pattern). Mapping uses ModelMapper (strict, null-skipping) — do not mix in manual builder mapping.
 - **Status:** `[BUILT]` for FR-2.1, FR-2.2 and basic CRUD/me endpoints. `[PLANNED]` for sub-resources FR-2.3 to FR-2.7 and the `profile-updated` Kafka producer.
+- **Frontend (Phase 3, `[PLANNED]`):**
+  - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), `react-hook-form` for the multi-tab edit form, axios for API calls, Jest 29 + `@testing-library/react`.
+  - **Routes:** `/profile` (view), `/profile/edit` (tabbed form). Both behind `<RequireAuth>`.
+  - **Key components:** `<ProfileView>`, `<ProfileEdit>` (renders `<Tab.Container>`/`<Nav.Link>`), `<BasicInfoTab>`, `<SkillsTab>` (with `<SkillTagInput>`), `<ExperienceTab>` (with `<ExperienceCard>` + `<AddExperienceModal>`), `<EducationTab>`, `<PreferencesTab>`, `<CompanyTab>` (recruiter-only). The role-aware tab list is computed from `AuthContext.role`.
+  - **Form handling:** `react-hook-form` per tab; submit calls `PUT /api/users/me` with the tab's slice of the profile. On dirty-tab switch, render a Bootstrap `<Modal>` confirming "Discard changes?".
+  - **Snapshot interaction:** the "View current profile" link from FR-8.11 deep-links to `/profile?email={candidateEmail}` for recruiters viewing applications — that admin/recruiter read-other-profile capability is *out of scope here* and noted in FR-8 / FR-1.11.
 
 ## Out of Scope
 
@@ -70,3 +88,7 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
 - **Edge case:** Soft-deleted profile referenced by an existing application. The `applicationdb.applications.snapshot_*` JSON survives because it is frozen at apply-time. The recruiter "View current profile" link (FR-8.11) must handle the soft-deleted case.
 - **Open question:** What is the canonical PUT shape for sub-resources — full replace of `skills` array, or per-item add/edit/delete endpoints? PRODUCT.md FR-2.3 to FR-2.5 say "add/edit/delete" which implies per-item. Decide during Phase 1 implementation and document in the service's Swagger.
 - **Open question:** Multi-currency in `job_preferences` defaults to INR per `docs/SCHEMAS.md`. No conversion logic in scope.
+- **Edge case (UI):** Per-tab save semantics. If a candidate edits Skills and Experience and only saves the Skills tab, the Experience changes remain dirty until they save that tab too. The dirty-state indicator on each tab nav link **must** reflect this so the user knows what is and isn't persisted.
+- **Edge case (UI):** ModelMapper is null-skipping on the backend; sending an empty `skills` array via the Skills tab to clear all skills must not be skipped. Verify the UI sends `[]` (not `null` / undefined) when the user removes all chips.
+- **Open question (UI):** Sub-resource FR-2.3..2.5 endpoint shape (per-item POST/PUT/DELETE) versus full-replace via `PUT /api/users/me` is unresolved on the backend. The UI tabs assume full-replace per tab for v1; revise when the backend lands.
+- **Open question (UI):** Should the "View current profile" link (FR-8.11) reuse the same `<ProfileView>` component with a different data source, or render a recruiter-specific read-only view? Decide during Phase 3 when both screens are built together.

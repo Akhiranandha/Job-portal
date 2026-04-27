@@ -19,6 +19,12 @@ Let candidates upload, label, list, download, and soft-delete up to five resumes
 - (NFR-3.5) The list endpoint **must** be paginated.
 - (NFR-5.4) Resume files **must** be stored in object storage (MinIO).
 - (NFR-8.2) Storage **must** be S3-compatible so MinIO locally and an S3-compatible store in prod are both viable.
+- (UI) The `/resumes` route **must** show the candidate's active resumes (newest first), each row showing label, original filename, upload date, file size, and Rename / Download / Delete actions.
+- (UI) The upload control **must** be a Bootstrap file input that accepts only `.pdf` and `.docx` (`accept` attribute) and surfaces client-side size validation (≤ 5 MB) before hitting the API. The API remains the source of truth for validation per NFR-1.12.
+- (UI) When the candidate is at 5/5 active resumes, the upload **must** trigger a Bootstrap `<Modal>` showing the FIFO confirmation message from FR-3.9 with the oldest resume's label and upload date. **Confirm** triggers the upload with `confirmEviction=true`; **Cancel** aborts without an upload.
+- (UI) Rename **must** open an inline editable label or a small modal capped at 50 characters, with character-count feedback.
+- (UI) Soft-delete **must** prompt a Bootstrap modal "Delete Resume X? Applications already submitted with this resume will keep working." Confirm calls `DELETE /api/resumes/{id}`.
+- (UI) Upload progress **must** surface via a Bootstrap `<ProgressBar>` for files larger than ~1 MB; smaller files can show a spinner.
 
 ## User Stories
 
@@ -28,6 +34,11 @@ Let candidates upload, label, list, download, and soft-delete up to five resumes
 - As a candidate, I want to download a resume I uploaded earlier so that I can verify what was sent.
 - As a candidate, I want to soft-delete an old resume from my list without breaking applications that already used it so that recruiters still see what I applied with.
 - As a recruiter, I want to download the resume attached to an application I am reviewing so that I can evaluate the candidate.
+- As a candidate on `/resumes`, I want a clearly labeled "Upload resume" button that's disabled (or shows "5/5 — replace oldest?") when I'm at cap so that the FIFO behaviour isn't a surprise.
+- As a candidate uploading a sixth resume, I want the FIFO modal to name exactly which file ("Resume 2, uploaded 15 Apr 2026") will be replaced so that I confirm with full information.
+- As a candidate, I want immediate inline error feedback when I pick a `.zip` or a 7 MB PDF so that I don't wait for an API round-trip to learn it's invalid.
+- As a candidate renaming a resume, I want the 50-char limit visible while I type so that I don't have to guess where to truncate.
+- As a candidate deleting a resume that's attached to an application, I want the modal copy to reassure me that recruiters can still download it so that I don't worry about retracting submissions.
 
 ## Technical Details
 
@@ -50,6 +61,12 @@ Let candidates upload, label, list, download, and soft-delete up to five resumes
   - Called by AI Parser Service to fetch file bytes for a given `resumeId`.
   - Called by Application Service or recruiter UI for download.
 - **Status:** `[PLANNED]` — entire service is Phase 1 work.
+- **Frontend (Phase 3, `[PLANNED]`):**
+  - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), axios with `multipart/form-data` for uploads + `XMLHttpRequest`/axios `onUploadProgress` for the progress bar, Jest 29 + `@testing-library/react`.
+  - **Routes:** `/resumes` (list + upload), accessible only to candidates.
+  - **Key components:** `<ResumeListPage>` (loads `GET /api/resumes/me`), `<ResumeRow>`, `<ResumeUploadButton>` (file input + cap check + `POST /api/resumes`), `<FifoConfirmModal>` (renders the API's 409 prompt payload), `<RenameLabelModal>`, `<DeleteResumeModal>`, `<UploadProgressBar>`.
+  - **Resume picker reuse:** the same `<ResumePickerSelect>` (Bootstrap `<Form.Select>` showing label + upload date) is reused inside the apply flow (FR-8) and the AI parsing mode picker (FR-4 mode B).
+  - **Download:** anchor with `download` attribute pointing at `GET /api/resumes/{id}/download`. The axios interceptor will not attach to plain `<a>` clicks; either issue a fetch + blob download programmatically (cleaner with auth) or rely on the browser's `Authorization` header for the same-origin gateway.
 
 ## Out of Scope
 
@@ -70,3 +87,7 @@ Let candidates upload, label, list, download, and soft-delete up to five resumes
 - **Edge case:** Filename Unicode / very long names. Stored `file_name` is for display only; storage key is the server UUID, so unsafe characters cannot affect the file system.
 - **Open question:** What happens on download for an `is_active = FALSE` resume that has zero active applications? Two options: 404 (treat as fully deleted) or 200 (allow recruiter who has a stored `resumeId` reference). Decide during Phase 1 implementation.
 - **Open question:** Should label rename be allowed on a soft-deleted resume? Probably no, but unspecified.
+- **Edge case (UI):** Authenticated download via `<a href>`. A plain anchor cannot carry the `Authorization: Bearer` header. The downloader **must** either fetch the file as a blob and trigger `URL.createObjectURL` + programmatic click, or the gateway **must** support a short-lived signed URL endpoint. Decide during Phase 3.
+- **Edge case (UI):** FIFO modal copy and the 409 response payload must agree on which resume is "oldest." If the backend changes the eviction order in a future release (e.g. switches to LRU), the modal copy must come from the API response, not be computed client-side.
+- **Edge case (UI):** Drag-and-drop. Bootstrap doesn't ship a drop-zone component; if added, it must still respect the same client-side type/size validation as the file input.
+- **Open question (UI):** Should the resume list be paginated? At a hard cap of 5 active resumes per user (FR-3.1), pagination is overkill — render all rows. Soft-deleted ones are excluded. Confirm before Phase 3 implementation.

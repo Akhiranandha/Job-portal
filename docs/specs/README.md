@@ -17,6 +17,10 @@ Each spec is self-contained — relevant NFRs are inlined into the feature they 
 | [FR-7 — AI Job Matching](FR-7-ai-job-matching.md) | `[PLANNED]` | Phase 2 (Redis-backed) |
 | [FR-8 — Applications](FR-8-applications.md) | `[PLANNED]` | Phase 1 |
 
+## Frontend
+
+Cross-cutting frontend tech stack and UI conventions: [frontend-tech-stack.md](frontend-tech-stack.md). Per-feature UI requirements, user stories, and components live inside each FR spec's *Technical Details → Frontend* sub-section.
+
 ## Where else to look
 
 - Phase ordering, exit criteria, and locked-in design decisions: [`../ROADMAP.md`](../ROADMAP.md).

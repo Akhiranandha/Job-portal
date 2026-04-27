@@ -20,6 +20,12 @@ Let a candidate parse a resume — either a freshly uploaded file or one already
 - (NFR-3.3) Resume parsing **must** complete within 30 seconds; the user **must** be shown a loading state.
 - (NFR-6.6) The exception in `NFR-6.6` (no sync HTTP for cross-service data that can be event-carried) explicitly applies here — sync HTTP is correct for FR-4.9 because the user is waiting.
 - (NFR-8.1) Parsing **must** go through an `LlmClient` interface with swappable implementations (Groq default, OpenAI, Anthropic, Ollama), selected by config.
+- (UI) Each candidate edit tab on `/profile/edit` whose contents the parser can populate (Skills, Experience, Education, Basic info → summary, years of experience) **must** show an "Autofill from resume" button at the top.
+- (UI) Clicking "Autofill from resume" **must** open a Bootstrap `<Modal>` offering two modes: **Pick existing resume** (a `<ResumePickerSelect>` listing the candidate's active resumes; reused from FR-3) and **Upload new file** (a file input that triggers the FIFO confirmation flow from FR-3.9 if the candidate is at cap).
+- (UI) During parsing, the modal **must** show a Bootstrap `<Spinner>` and a 30-second-capped progress message ("Parsing resume — this can take up to 30 seconds"). The user **must** see no other interactive controls in the modal except a Cancel button.
+- (UI) On success, the modal closes and the form fields populate. Fields touched by parsing **must** be visually marked (e.g. a small "autofilled" Bootstrap `<Badge>`) until the candidate either edits the field or saves the form.
+- (UI) On parse failure after a successful save (FR-4.6), the modal **must** show the error and a **Retry parsing** button that re-calls the parse endpoint with `{ resumeId }` (no re-upload).
+- (UI) Profile updates from autofill **must** only commit when the candidate clicks the tab's Save button (FR-4.8). The form **must not** auto-submit after autofill.
 
 ## User Stories
 
@@ -28,6 +34,11 @@ Let a candidate parse a resume — either a freshly uploaded file or one already
 - As a candidate, I want to edit any parsed field before saving so that I can correct LLM errors (wrong company name, garbled bullets) before they reach my profile.
 - As a candidate whose parse failed mid-flow, I want to retry parsing against the resume that was already saved so that I don't have to re-upload the file.
 - As a candidate, I want a loading indicator and a 30-second cap so that I know when something is wrong rather than waiting indefinitely.
+- As a candidate on the Skills tab, I want an "Autofill from resume" button right at the top of the tab so that I don't have to leave the form to find it.
+- As a candidate, I want a clear two-option modal (pick existing vs upload new) so that I don't accidentally re-upload a file I've already stored.
+- As a candidate watching the spinner, I want a Cancel button so that I can abort if I changed my mind or another tab needs attention.
+- As a candidate whose parse failed but resume was saved, I want a single "Retry parsing" button that doesn't make me re-pick the file so that I'm one click away from a fresh attempt.
+- As a candidate seeing autofilled fields, I want a visual marker on each so that I know which to double-check before saving.
 
 ## Technical Details
 
@@ -48,6 +59,12 @@ Let a candidate parse a resume — either a freshly uploaded file or one already
   - Resilience4j circuit breaker, timeout (≤ 30 s), retry with exponential backoff. Failures return 503 with a retry-able marker.
   - `LlmClient` interface; default impl = Groq (free tier). Config-selected. Vendor-lock-in protection is a `docs/ROADMAP.md` decision-log entry.
 - **Status:** `[PLANNED]` — Phase 2 work.
+- **Frontend (Phase 3, `[PLANNED]`):**
+  - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), axios with a 35-second timeout (a small headroom over the NFR-3.3 30-second budget), Jest 29 + `@testing-library/react`. Mock the parse endpoint with MSW or `jest.fn()` in tests.
+  - **Routes:** No new route. The flow is initiated from `/profile/edit` (FR-2) inside a modal.
+  - **Key components:** `<AutofillButton>` (per relevant tab), `<AutofillModal>` (mode picker → spinner → result/error), `<AutofillModeChooser>` (pick existing vs upload new), `<ParseSpinner>` (with elapsed-time display capped at 30s), `<RetryParseButton>` (FR-4.6), `<AutofilledFieldBadge>` (small Bootstrap `<Badge>` next to autofilled fields).
+  - **State machine inside `<AutofillModal>`:** `idle → choosingMode → uploading | parsing → ready | parseError | uploadError`. The retry path lives in `parseError` and stays inside the modal.
+  - **Form integration:** the modal's success callback calls `setValue` on each `react-hook-form`-controlled field and marks the field as `autofilled = true` via the form's metadata; saving the tab clears the marker. No parsed data is auto-saved (FR-4.8).
 
 ## Out of Scope
 
@@ -70,3 +87,8 @@ Let a candidate parse a resume — either a freshly uploaded file or one already
 - **Edge case:** Very large PDF / DOCX (close to 5 MB cap). PDFBox extraction can be slow; combine with the 30 s NFR-3.3 budget, the LLM call may be the dominant cost — parser must monitor end-to-end latency, not just LLM call latency.
 - **Open question:** Should User Service expose the parse error to the client verbatim, or sanitise it? LLM provider errors may include provider-identifying strings; portability (NFR-8.1) suggests sanitising.
 - **Open question:** Caching at AI Parser by `(file_hash, model)` — deferred per `docs/SCHEMAS.md`. Decide before Phase 2 ships if LLM costs become material.
+- **Edge case (UI):** The user navigates away from `/profile/edit` while parsing is in flight. Either (a) cancel the in-flight request via `AbortController`, or (b) leave it running and discard the response. v1 should pick (a); document the choice in the component.
+- **Edge case (UI):** Parsed Skills include items already in the candidate's profile. Merge by deduping on canonical (lowercase, trimmed) skill name; keep the candidate's existing chip rather than the parser's casing.
+- **Edge case (UI):** Parsed Experience entries with malformed dates. Show the row in the form anyway, with a Bootstrap inline error on the date field, so the candidate can correct rather than silently lose the entry.
+- **Open question (UI):** Should "autofilled" markers persist across page reloads, or only within the current edit session? Persisting requires server-side tracking; for v1, in-session is sufficient.
+- **Open question (UI):** Cancel during parse — does that abort the LLM call server-side too? If the AI Parser does not support request cancellation, "Cancel" only stops the UI from waiting; the call continues to billing. Confirm Resilience4j cancel behaviour during Phase 2.

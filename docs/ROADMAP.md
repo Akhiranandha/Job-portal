@@ -17,24 +17,30 @@ Phases are ordered. Don't skip ahead unless explicitly redirected.
 
 ---
 
-## 🚧 Phase 0 — Foundation fixes (current)
+## ✅ Phase 0 — Foundation fixes (effectively closed)
 
-Goal: fix the four violated NFRs before building new services on top
-of broken foundations.
+Goal was to fix the four violated NFRs before building new services
+on top of broken foundations. Three are done; NFR-1.6 is consciously
+deferred to Phase 5.
 
 | Order | NFR | Description | Effort | Status |
 |---|---|---|---|---|
 | 1 | NFR-1.8 | Self-or-admin authz in User Service | ~half day | ✅ done |
 | 2 | NFR-1.3 | Move BCrypt hashing to User Service; remove raw password from Kafka events | ~half day | ✅ done |
-| 3 | NFR-1.5 | Fail-fast JWT secret validation in non-dev profiles | ~30 min | next |
-| 4 | NFR-1.6 | Gateway signs headers, services verify (HMAC) | ~1 day | |
+| 3 | NFR-1.5 | Fail-fast JWT secret validation in non-dev profiles | ~30 min | ✅ done |
+| 4 | NFR-1.6 | Gateway signs headers, services verify (HMAC) | ~1 day | ⏸️ deferred to Phase 5 |
 
-Plus housekeeping:
+Plus housekeeping (still open):
 - Add CORS config to Gateway (NFR-1.9)
-- Add basic rate limiting on `/auth/login` (NFR-1.10)
+- Add basic rate limiting on `/auth/login` (NFR-1.10) — needs Redis
+- Move hardcoded MySQL credentials out of `application.properties`
+- `/auth/password` → require authentication
+- NFR-1.4: shorten `jwt.expiration` in auth-service from 86400000 (24h)
+  to ≤ 900000 (15 min). Refresh tokens are deferred (FR-1.5, Phase 5);
+  until then, users re-login every 15 min — acceptable per the deferral.
 
-**Exit criteria:** all 4 violated NFRs marked `[BUILT]` in
-`ARCHITECTURE.md`. Existing flows still pass end-to-end.
+**Exit criteria:** the 3 fixed NFRs marked `[BUILT]` in
+`ARCHITECTURE.md`; NFR-1.6 marked `[DEFERRED]`. Phase 1 can start.
 
 ---
 
@@ -134,6 +140,10 @@ portfolio piece.
 - **Real cloud deployment** (AWS / GCP)
 - **Refresh tokens + email verification + password reset**
   (the deferred FR-1.5, FR-1.7, FR-1.8)
+- **Gateway-signed identity headers (NFR-1.6)** — gateway HMACs
+  `email|role|timestamp`, downstream services verify signature before
+  trusting. Defense in depth; today services rely on the gateway
+  being the only reachable entry point.
 
 ---
 

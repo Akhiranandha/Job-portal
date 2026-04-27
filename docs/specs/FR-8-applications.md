@@ -25,6 +25,14 @@ Let candidates apply to jobs with a chosen resume, an editable cover note, and a
 - (NFR-2.1) Cross-service data **must** be event-carried (job data cached locally) so a Job Service outage does not block apply (see NFR-6.6).
 - (NFR-2.5) Kafka consumers **must** be idempotent. Dedupe on the natural key (`applicationId` for application events; `jobId` for job events) before mutating state.
 - (NFR-6.2) Errors **must** follow the standard error response shape from `CONVENTIONS.md`.
+- (UI) Clicking "Apply" on a job detail (`/jobs/{id}`) **must** navigate to a dedicated `/apply/{jobId}` route (not a modal). Browser back works as Cancel.
+- (UI) `/apply/{jobId}` **must** show: read-only profile snapshot fields fetched from `GET /api/users/me`, an editable summary, a `<ResumePickerSelect>` (label + upload date) with the most-recent resume pre-selected (FR-8.2), and a `<CoverNoteTextarea>` (≤ 5000 chars with live counter).
+- (UI) The Submit button on `/apply/{jobId}` **must** call `POST /api/applications` and on success redirect to `/applications/me` with a Bootstrap toast "Application submitted."
+- (UI) If the candidate has already applied (server returns 409 on duplicate, FR-8.5), the apply page **must** detect it and render a banner with a link to the existing application instead of the form.
+- (UI) The job detail page **must** disable / replace the Apply button with "Already applied" when `GET /api/applications/me` already includes this `jobId`. The decision can use the cached candidate-applications set in `AuthContext`.
+- (UI) `/applications/me` **must** list the candidate's applications with status badge, applied date, status update date, and a Withdraw action visible only when status is not in a terminal state (`REJECTED`, `OFFERED`, `WITHDRAWN`). Withdraw triggers a Bootstrap confirmation modal.
+- (UI) `/jobs/{id}/applicants` **must** be the recruiter view, owner-only. It **must** render each application with snapshot summary, "View current profile" link (FR-8.11) to `/profile?email={candidateEmail}`, resume download button, status dropdown, and (when FR-7 is live) a match-score badge.
+- (UI) The status dropdown **must** offer only valid forward transitions from the current status (e.g. don't show `WITHDRAWN` as an option to recruiters — that's candidate-only).
 
 ## User Stories
 
@@ -38,6 +46,13 @@ Let candidates apply to jobs with a chosen resume, an editable cover note, and a
 - As a recruiter, I want to also see the candidate's current profile so that I can spot meaningful updates since they applied.
 - As a recruiter, I want to move an application through statuses (`REVIEWING → SHORTLISTED → OFFERED`) so that I track my pipeline.
 - As a recruiter, I want to download the exact resume the candidate attached to this application even if they've since deleted it from their list, so that I have a stable record.
+- As a candidate clicking Apply on `/jobs/{id}`, I want to land on a dedicated `/apply/{jobId}` page so that I can review carefully and use browser-back as cancel without losing context.
+- As a candidate applying, I want my most-recently-uploaded resume preselected so that I don't pick the wrong file by accident.
+- As a candidate writing a cover note, I want a live character counter so that I don't draft 6000 characters and have it rejected on submit.
+- As a candidate who already applied to this job, I want the Apply button replaced with "Already applied — view your application" so that I don't waste time.
+- As a candidate on `/applications/me`, I want a clear status badge per row and a Withdraw action only when withdrawing is allowed so that the available actions are obvious.
+- As a recruiter on the applicants page, I want a status dropdown next to each application that shows only the valid next states so that I don't accidentally pick a state the system rejects.
+- As a recruiter, I want a one-click "View current profile" link on each application so that I can sanity-check whether the candidate has updated their skills since applying.
 
 ## Technical Details
 
@@ -70,6 +85,13 @@ Let candidates apply to jobs with a chosen resume, an editable cover note, and a
   - Profile snapshot data either (a) supplied by the client from the live profile fetch, or (b) fetched by Application Service from User Service via sync HTTP at apply-time. Decide during Phase 1 (see Open Questions); option (a) is simpler but trusts the client.
   - Resume download is a Resume Service responsibility (see `FR-3-resume-management.md` FR-3.8 / FR-8.12).
 - **Status:** `[PLANNED]` — Phase 1.
+- **Frontend (Phase 3, `[PLANNED]`):**
+  - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), `react-hook-form` for the apply form, axios, Jest 29 + `@testing-library/react`.
+  - **Routes:** `/apply/{jobId}` (candidate apply), `/applications/me` (candidate list), `/jobs/{id}/applicants` (recruiter list — shared route name with FR-7 ranked view).
+  - **Key components:** `<ApplyPage>` (orchestrates `GET /api/jobs/{id}` + `GET /api/users/me` + `GET /api/resumes/me`), `<ApplyReviewForm>` (Bootstrap-styled form with the snapshot fields, `<ResumePickerSelect>`, `<CoverNoteTextarea>` with live counter), `<ApplicationsListPage>` (candidate), `<ApplicationRow>` (with `<StatusBadge>` shared from FR-5/CLAUDE conventions), `<WithdrawConfirmModal>`, `<ApplicantsPage>` (recruiter; integrates FR-7 ranked sort), `<ApplicantCard>`, `<StatusDropdown>` (filtered to valid transitions only).
+  - **Snapshot strategy on the client:** the apply form fetches the live profile and presents the editable summary; on submit the *server* takes the snapshot via the recommended Open-Question option (Application Service fetches profile via sync HTTP at apply-time). Client only sends `{ jobId, resumeId, coverNote, summaryOverride? }`.
+  - **Already-applied detection:** boot fetches `GET /api/applications/me` once into context, then the job detail and matches pages can check membership without an extra round-trip per card.
+  - **Match score on applicants page:** see FR-7 spec; `<ApplicantsPage>` issues both endpoints in parallel and joins on `candidate_email`.
 
 ## Out of Scope
 
@@ -95,3 +117,9 @@ Let candidates apply to jobs with a chosen resume, an editable cover note, and a
 - **Open question:** How does the snapshot get into the request? (a) Client sends it (simpler, trusts client). (b) Application Service fetches the profile via sync HTTP from User Service at apply-time (more correct, costs a round-trip). Recommend (b) and treat the request body as carrying only `jobId`, `resumeId`, `coverNote` plus an optional client-edited `snapshot_summary`.
 - **Open question:** Sorting by match score on `GET /applications/job/{jobId}` (FR-8.8). Match scores live in Matching Service Redis. Either (a) Application Service calls Matching at request time (sync HTTP — fine here since the user is waiting and there's no event-carrying alternative), or (b) match scores are denormalised into the application row via a Kafka event from Matching. v1 should pick (a) for simplicity unless latency proves an issue.
 - **Open question:** Should `ApplicationStatusChangedEvent` carry the full new state or only the delta? Future Notification Service will consume it, so include enough for an email body without re-fetching.
+- **Edge case (UI):** Candidate navigates to `/apply/{jobId}` for a job that's now CLOSED. The page **must** detect the closed status and render a banner "This job is no longer accepting applications" instead of the form.
+- **Edge case (UI):** Candidate edits the summary on `/apply/{jobId}` and clicks browser-back. The change is lost — confirm via `beforeunload`-style `<Prompt>` (React Router 6 doesn't ship `<Prompt>` natively; use a `useBlocker` hook).
+- **Edge case (UI):** Concurrent status updates by two recruiter sessions. Last-write-wins on the server; the UI **should** refetch on `409`/version mismatch and show a toast "Status changed by another session — refreshed."
+- **Edge case (UI):** Resume picker shows soft-deleted resumes? No — the picker only shows active resumes from `GET /api/resumes/me`. The candidate cannot apply with a soft-deleted resume.
+- **Open question (UI):** "View current profile" target. If the candidate has soft-deleted their account, the recruiter's link should render a graceful "Profile no longer available" state instead of 404. Decide rendering during Phase 3.
+- **Open question (UI):** Should the recruiter applicants page paginate or virtualise? At expected demo scale (tens to low hundreds of applicants per job), Bootstrap pagination is sufficient. Revisit if list size grows.
