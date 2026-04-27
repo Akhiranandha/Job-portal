@@ -6,13 +6,14 @@ before making changes.**
 
 ## Where to look first
 
-| Question                         | File                   |
-| -------------------------------- | ---------------------- |
-| What are we building (features)? | `docs/PRODUCT.md`      |
-| How is the system designed?      | `docs/ARCHITECTURE.md` |
-| What does each table look like?  | `docs/SCHEMAS.md`      |
-| Coding rules for this project    | `docs/CONVENTIONS.md`  |
-| What's done, what's next         | `docs/ROADMAP.md`      |
+| Question                                                      | File                   |
+| ------------------------------------------------------------- | ---------------------- |
+| What are we building (features)?                              | `docs/PRODUCT.md`      |
+| Per-feature specs (Goal, Reqs, Stories, Tech, Out of scope, Edge cases) | `docs/specs/`          |
+| How is the system designed?                                   | `docs/ARCHITECTURE.md` |
+| What does each table look like?                               | `docs/SCHEMAS.md`      |
+| Coding rules for this project                                 | `docs/CONVENTIONS.md`  |
+| What's done, what's next                                      | `docs/ROADMAP.md`      |
 
 ## Most important things to know
 
@@ -20,10 +21,12 @@ before making changes.**
    (`auth_db.users`, `userdb.users`), kept in sync by Kafka events.
    There is no surrogate user ID.
 
-2. **The system has known security violations** (NFR-1.3, NFR-1.5,
-   NFR-1.6, NFR-1.8) that are scheduled for Phase 0 fixes. Do not
-   "fix" these spontaneously — they require deliberate refactoring.
-   See `docs/ROADMAP.md` for the plan.
+2. **Phase 0 security work is mostly done.** NFR-1.3, NFR-1.5, and
+   NFR-1.8 are fixed. NFR-1.6 (gateway HMAC-signs identity headers,
+   services verify) is **deferred to Phase 5 stretch** — downstream
+   services still trust `X-User-Email` / `X-User-Role` without
+   signature verification. Don't "fix" deferred items spontaneously;
+   see `docs/ROADMAP.md`.
 
 3. **Resume parsing is synchronous via HTTP, not async via Kafka.**
    This is intentional. See FR-4 in `docs/PRODUCT.md`.
@@ -95,3 +98,5 @@ before making changes.**
 Kafka → discovery-service → auth-service + user-service → api-gateway
 
 Other services join as they're built.
+
+Don't run tests after each change unless i explicitly tell you to.
