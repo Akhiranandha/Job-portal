@@ -44,7 +44,7 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
 
 ## Technical Details
 
-- **Owning service(s):** User Service `:8081` `[BUILT, PARTIAL]`. Profile sub-resources (FR-2.3 to FR-2.7) are `[PLANNED]` for Phase 1.
+- **Owning service(s):** User Service `:8081` `[BUILT]`. Profile sub-resources (FR-2.3 to FR-2.7) landed in Phase 1.
 - **Data ownership:** `userdb.users` (single table for both roles). PK = `email`. Common profile fields are columns; complex shapes are JSON columns:
   - `skills` JSON — `["Java","Kafka","Spring"]`
   - `experience` JSON — `[{ company, role, startDate, endDate, description }]` (nullable `endDate` = current)
@@ -54,16 +54,21 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
   - `years_of_experience DECIMAL(4,1)` supports half-year granularity (e.g. `2.5`).
   - Indexes: `idx_users_role`, `idx_users_active`.
 - **API surface:**
-  - `GET /api/users/me` — fetch caller's profile.
-  - `PUT /api/users/me` — update caller's profile.
+  - `GET /api/users/me` — fetch caller's profile (now includes skills, experience, education, jobPreferences, and recruiter fields).
+  - `PUT /api/users/me` — update caller's basic profile.
   - `DELETE /api/users/me` — soft-delete caller (sets `is_active = FALSE`, publishes `delete-user` event).
   - `GET /api/users` — `ADMIN` only.
-  - Profile sub-resource endpoints for skills/experience/education/preferences and recruiter fields are `[PLANNED]` for Phase 1; final paths to be decided in implementation but should follow the `/api/users/me/<sub-resource>` convention so identity stays self-targeted.
+  - `PUT /api/users/me/skills` — full-replace `["Java","Kafka",...]`. Roles: JOB_SEEKER, ADMIN.
+  - `PUT /api/users/me/experience` — full-replace `[{ company, role, startDate, endDate, description }, ...]`. Roles: JOB_SEEKER, ADMIN.
+  - `PUT /api/users/me/education` — full-replace `[{ institution, degree, field, startYear, endYear }, ...]`. Roles: JOB_SEEKER, ADMIN.
+  - `PUT /api/users/me/preferences` — full-replace `{ locations, salaryMin, salaryMax, currency, remote, employmentTypes }`. Roles: JOB_SEEKER, ADMIN.
+  - `PUT /api/users/me/recruiter` — `{ companyName, designation, companyWebsite }`. Roles: RECRUITER, ADMIN.
+- **Endpoint shape decision (resolved):** Full-replace per sub-resource, not per-item. Matches the per-tab save UI semantics and avoids per-item ID gymnastics on JSON columns. "Delete all skills" = `PUT []`.
 - **Events produced/consumed:**
   - Produced: `UserRegistrationEvent` on `user-registration`, `UserDeleteEvent` on `delete-user`.
-  - Produced (planned): `ProfileUpdatedEvent` on `profile-updated`, consumed by Matching Service to refresh ranked-list indexes.
-- **Cross-service interactions:** Identity is taken from the `X-User-Email` header injected by the gateway (per `CONVENTIONS.md` self-targeted pattern). Mapping uses ModelMapper (strict, null-skipping) — do not mix in manual builder mapping.
-- **Status:** `[BUILT]` for FR-2.1, FR-2.2 and basic CRUD/me endpoints. `[PLANNED]` for sub-resources FR-2.3 to FR-2.7 and the `profile-updated` Kafka producer.
+  - Produced: `ProfileUpdatedEvent` on `profile-updated` after every successful sub-resource save. Carries a full snapshot of all profile fields. Consumer (Matching Service, Phase 2) dedupes on `(email, updatedAt)`.
+- **Cross-service interactions:** Identity is taken from the `X-User-Email` header injected by the gateway (per `CONVENTIONS.md` self-targeted pattern). Role checks read from `X-User-Role`. Mapping uses ModelMapper (strict, null-skipping) for full-profile responses; sub-resource updates set fields directly on the entity.
+- **Status:** `[BUILT]` for FR-2.1 through FR-2.7. `profile-updated` Kafka producer is `[BUILT]`; consumer awaits Matching Service in Phase 2.
 - **Frontend (Phase 3, `[PLANNED]`):**
   - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), `react-hook-form` for the multi-tab edit form, axios for API calls, Jest 29 + `@testing-library/react`.
   - **Routes:** `/profile` (view), `/profile/edit` (tabbed form). Both behind `<RequireAuth>`.
@@ -86,9 +91,9 @@ Let candidates and recruiters maintain rich profile data — basic info plus rol
 - **Edge case:** `ProfileUpdatedEvent` recompute storms. A profile edit that touches skills triggers a Matching Service recompute against every PUBLISHED job. Producer should consolidate rapid edits; consumer must be idempotent and dedupe on `(email, updatedAt)`.
 - **Edge case:** Recruiter changes `company_name` while their jobs are live. Existing `jobdb.jobs.company` snapshots are not retroactively updated — that is the documented behaviour; do not back-fill.
 - **Edge case:** Soft-deleted profile referenced by an existing application. The `applicationdb.applications.snapshot_*` JSON survives because it is frozen at apply-time. The recruiter "View current profile" link (FR-8.11) must handle the soft-deleted case.
-- **Open question:** What is the canonical PUT shape for sub-resources — full replace of `skills` array, or per-item add/edit/delete endpoints? PRODUCT.md FR-2.3 to FR-2.5 say "add/edit/delete" which implies per-item. Decide during Phase 1 implementation and document in the service's Swagger.
+- ~~**Open question:** What is the canonical PUT shape for sub-resources?~~ Closed — full-replace per sub-resource. PRODUCT.md "add/edit/delete" is the user-facing capability description; the API contract realises it with `PUT /api/users/me/<sub-resource>` carrying the full array/object. "Delete all" = `PUT []`.
 - **Open question:** Multi-currency in `job_preferences` defaults to INR per `docs/SCHEMAS.md`. No conversion logic in scope.
 - **Edge case (UI):** Per-tab save semantics. If a candidate edits Skills and Experience and only saves the Skills tab, the Experience changes remain dirty until they save that tab too. The dirty-state indicator on each tab nav link **must** reflect this so the user knows what is and isn't persisted.
 - **Edge case (UI):** ModelMapper is null-skipping on the backend; sending an empty `skills` array via the Skills tab to clear all skills must not be skipped. Verify the UI sends `[]` (not `null` / undefined) when the user removes all chips.
-- **Open question (UI):** Sub-resource FR-2.3..2.5 endpoint shape (per-item POST/PUT/DELETE) versus full-replace via `PUT /api/users/me` is unresolved on the backend. The UI tabs assume full-replace per tab for v1; revise when the backend lands.
+- ~~**Open question (UI):** Sub-resource endpoint shape?~~ Closed — backend uses full-replace via `PUT /api/users/me/<sub-resource>` (one endpoint per tab). The UI's per-tab save semantics line up exactly.
 - **Open question (UI):** Should the "View current profile" link (FR-8.11) reuse the same `<ProfileView>` component with a different data source, or render a recruiter-specific read-only view? Decide during Phase 3 when both screens are built together.

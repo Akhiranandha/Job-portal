@@ -1,110 +1,34 @@
 package com.jobportal.userservice.service;
 
-import com.jobportal.kafka_events.UserDeleteEvent;
-import com.jobportal.kafka_events.UserRegistrationEvent;
-import com.jobportal.userservice.dto.*;
-import com.jobportal.userservice.entity.User;
-import com.jobportal.userservice.exception.UserAlreadyExistsException;
-import com.jobportal.userservice.exception.UserNotFoundException;
-import com.jobportal.userservice.exception.UserServiceException;
-import com.jobportal.userservice.kafka.KafkaProducer;
-import com.jobportal.userservice.repository.UserRepository;
-import org.modelmapper.ModelMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import com.jobportal.userservice.dto.EducationEntry;
+import com.jobportal.userservice.dto.ExperienceEntry;
+import com.jobportal.userservice.dto.JobPreferencesDto;
+import com.jobportal.userservice.dto.RecruiterProfileRequest;
+import com.jobportal.userservice.dto.UserRegistrationRequest;
+import com.jobportal.userservice.dto.UserResponse;
+import com.jobportal.userservice.dto.UserUpdateRequest;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
-@Service
-public class UserService {
+public interface UserService {
 
-    private static final Logger logger = LoggerFactory.getLogger(UserService.class);
+    UserResponse registerUser(UserRegistrationRequest request);
 
-    private final UserRepository userRepository;
-    private final KafkaProducer kafkaProducer;
-    private final ModelMapper modelMapper;
-    private final PasswordEncoder passwordEncoder;
+    UserResponse getUserByEmail(String email);
 
-    public UserService(UserRepository userRepository,
-                       KafkaProducer kafkaProducer,
-                       ModelMapper modelMapper,
-                       PasswordEncoder passwordEncoder) {
-        this.userRepository = userRepository;
-        this.kafkaProducer = kafkaProducer;
-        this.modelMapper = modelMapper;
-        this.passwordEncoder = passwordEncoder;
-    }
+    List<UserResponse> getAllUsers();
 
-    @Transactional
-    public UserResponse registerUser(UserRegistrationRequest request) {
-        if (request.getRole() == User.Role.ADMIN) {
-            throw new UserServiceException("ADMIN role cannot be self-assigned via public registration");
-        }
+    UserResponse updateUser(String email, UserUpdateRequest request);
 
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new UserAlreadyExistsException("User with email already exists: " + request.getEmail());
-        }
+    void deleteUser(String email);
 
-        User user = modelMapper.map(request, User.class);
-        user.setIsActive(true);
-        user.setIsEmailVerified(false);
+    UserResponse updateSkills(String email, List<String> skills);
 
-        User savedUser = userRepository.save(user);
-        logger.info("User saved to database with email: {}", savedUser.getEmail());
+    UserResponse updateExperience(String email, List<ExperienceEntry> entries);
 
-        String passwordHash = passwordEncoder.encode(request.getPassword());
+    UserResponse updateEducation(String email, List<EducationEntry> entries);
 
-        UserRegistrationEvent credentialsEvent = UserRegistrationEvent.builder()
-                .email(request.getEmail())
-                .passwordHash(passwordHash)
-                .role(request.getRole().name())
-                .build();
+    UserResponse updatePreferences(String email, JobPreferencesDto preferences);
 
-        kafkaProducer.sendUserRegistrationEvent(credentialsEvent);
-        logger.info("User credentials sent to auth service via Kafka for email: {}", request.getEmail());
-
-        return modelMapper.map(savedUser, UserResponse.class);
-    }
-
-    public UserResponse getUserByEmail(String email) {
-        User user = userRepository.findByEmailAndIsActiveTrue(email)
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
-        return modelMapper.map(user, UserResponse.class);
-    }
-
-    public List<UserResponse> getAllUsers() {
-        return userRepository.findByIsActiveTrue().stream()
-                .map(user -> modelMapper.map(user, UserResponse.class))
-                .collect(Collectors.toList());
-    }
-
-    @Transactional
-    public UserResponse updateUser(String email, UserUpdateRequest request) {
-        User user = userRepository.findByEmailAndIsActiveTrue(email)
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
-
-        modelMapper.map(request, user);
-
-        User updatedUser = userRepository.save(user);
-        logger.info("User updated with email: {}", updatedUser.getEmail());
-
-        return modelMapper.map(updatedUser, UserResponse.class);
-    }
-
-    @Transactional
-    public void deleteUser(String email) {
-        User user = userRepository.findByEmailAndIsActiveTrue(email)
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
-        user.setIsActive(false);
-        userRepository.save(user);
-        logger.info("User deactivated (soft delete) with email: {}", email);
-
-        UserDeleteEvent deleteEvent = new UserDeleteEvent(email);
-        kafkaProducer.sendUserDeleteEvent(deleteEvent);
-        logger.info("User delete event sent to auth service via Kafka for email: {}", email);
-    }
+    UserResponse updateRecruiterProfile(String email, RecruiterProfileRequest request);
 }

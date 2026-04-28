@@ -69,10 +69,14 @@ Phase 1+ services will additionally need: `resumedb`, `jobdb`, `applicationdb` (
 
 ### Credentials
 
-Today `application.properties` in each service has hardcoded `root` / `Kodam@624` credentials. **This is tracked as Phase 0 housekeeping** in [ROADMAP.md](ROADMAP.md) — moving these to env vars is open. Until that's done, either:
+Each service's `application.properties` now reads MySQL credentials from environment variables, with a fallback default of `root` / empty password for laziness during local dev. Set them in your shell or your IDE's runner — see the env-var table below.
 
-- Match those creds locally (`CREATE USER 'root'@'localhost' IDENTIFIED BY 'Kodam@624';` if your `root` is different), **or**
-- Edit each service's `application.properties` to point at your local MySQL user.
+```bash
+export DB_USERNAME=root
+export DB_PASSWORD='your-mysql-root-password'
+```
+
+If you don't set them, the services will try `root` with an empty password and the connection will fail loudly on startup.
 
 ## 4. Environment variables
 
@@ -82,6 +86,11 @@ Set these in your shell, or use a `.env` file with your IDE's runner.
 | --- | --- | --- | --- |
 | `JWT_SECRET` | `defaultSecretKeyForDevelopmentEnvironmentOnly` | **Yes** — must be ≥ 32 bytes and not the dev default | auth-service, api-gateway |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | No | auth-service, user-service |
+| `DB_HOST` | `localhost` | No | auth-service, user-service |
+| `DB_PORT` | `3306` | No | auth-service, user-service |
+| `DB_USERNAME` | `root` | No | auth-service, user-service |
+| `DB_PASSWORD` | _(empty)_ | **Yes** — set to your real MySQL password unless your `root` actually has no password | auth-service, user-service |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://localhost:3000` | No | api-gateway |
 
 NFR-1.5 (`@PostConstruct` validator) **fail-fast aborts startup** in auth-service and api-gateway if the JWT secret is the dev default, blank, or shorter than 32 bytes — *unless* the Spring profile is `dev`. For local dev you can either run with `-Dspring.profiles.active=dev` or export a real secret:
 

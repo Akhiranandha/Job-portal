@@ -6,6 +6,7 @@ state**, with deltas explicitly marked. Tags:
 - `[BUILT]`     — implemented and matches target
 - `[PARTIAL]`   — implemented but incomplete or has known gaps
 - `[VIOLATED]`  — implemented incorrectly; scheduled for Phase 0 fix
+- `[DEFERRED]`  — known gap, fix consciously postponed (see ROADMAP)
 - `[PLANNED]`   — not yet built; spec only
 
 ---
@@ -52,16 +53,17 @@ routes via `lb://SERVICE-NAME`. No security on the dashboard.
 Single public entry point. Spring Cloud Gateway (WebFlux).
 
 **Current routes:** (matched in declaration order; first match wins)
-- `/auth/**` → AUTH-SERVICE (no JWT filter; login/password change open)
+- `/auth/password` → AUTH-SERVICE (JWT filter applied)
+- `/auth/**` → AUTH-SERVICE (no filter; login is open)
 - `/api/users/public/**` → USER-SERVICE (no filter; public registration)
 - `/api/users/**` → USER-SERVICE (JWT filter)
 
 **Current behavior:** JWT filter validates HMAC-signed tokens, injects
-`X-User-Email` and `X-User-Role` headers downstream.
+`X-User-Email` and `X-User-Role` headers downstream. CORS is open to
+configured frontend origins (`CORS_ALLOWED_ORIGINS`).
 
 **Gaps to close:**
-- No CORS config (NFR-1.9)
-- No rate limiting (NFR-1.10)
+- No rate limiting (NFR-1.10) — blocked on Redis (Phase 2)
 - No correlation ID injection (NFR-4.2)
 - Routes for jobs/applications/resumes not yet added
 
@@ -70,14 +72,15 @@ Owns `auth_db`. Issues JWTs, manages credentials.
 
 **Endpoints:**
 - `POST /auth/login` — email + password → JWT
-- `PUT /auth/password` — change password (open per current security config)
+- `PUT /auth/password` — change password; requires JWT, target email derived from `X-User-Email` (a logged-in user can only change their own password)
 
 **Kafka consumers:**
 - `user-registration` → creates User row (stores `passwordHash` from event verbatim — User Service is the BCrypt origin)
 - `delete-user` → soft-deletes User (sets `isActive=false`)
 
 **Known issues:**
-- `[VIOLATED NFR-1.5]` Has dev fallback secret. Should fail-fast in non-dev.
+*(none currently — Phase 0 fixes have closed the open violations on
+this service)*
 
 ### User Service `:8081` [BUILT, PARTIAL]
 Owns `userdb`. User profile CRUD.
@@ -86,22 +89,30 @@ Owns `userdb`. User profile CRUD.
 - `POST /api/users/public/register` — public registration
 - `GET /api/users` — list all users (ADMIN only)
 - `GET /api/users/me` — fetch caller's own profile
-- `PUT /api/users/me` — update caller's own profile
+- `PUT /api/users/me` — update caller's own basic profile
 - `DELETE /api/users/me` — soft-delete caller's own account
+- `PUT /api/users/me/skills` — replace skills array (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/experience` — replace work experience (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/education` — replace education (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/preferences` — replace job preferences (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/recruiter` — set recruiter profile (RECRUITER, ADMIN)
 
 Caller identity is taken from the `X-User-Email` header injected
-by the gateway. There are no `{email}`-parameterised endpoints —
-admin user-management against arbitrary emails is deferred to
-FR-1.11.
+by the gateway; role is taken from `X-User-Role`. There are no
+`{email}`-parameterised endpoints — admin user-management against
+arbitrary emails is deferred to FR-1.11. Sub-resources use full-replace
+semantics (PUT with the entire array/object) — no per-item endpoints.
 
 **Kafka producers:**
 - Publishes `UserRegistrationEvent` to `user-registration` on register
 - Publishes `UserDeleteEvent` to `delete-user` on delete
+- Publishes `ProfileUpdatedEvent` to `profile-updated` after every successful sub-resource save (carries a full snapshot of all profile fields; consumer dedupes on `(email, updatedAt)`)
 
 **Known issues:**
-- `[VIOLATED NFR-1.6]` Trusts `X-User-Email` and `X-User-Role` headers
+- `[DEFERRED NFR-1.6]` Trusts `X-User-Email` and `X-User-Role` headers
   without verifying request came from gateway. Spoofable if port 8081
-  is reachable directly.
+  is reachable directly. Deferred to Phase 5 — mitigated today by
+  network-level access control (services bind to localhost in dev).
 
 **Recently fixed:**
 - `[BUILT NFR-1.8]` Self-targeted endpoints (`/api/users/me`) take
@@ -110,10 +121,12 @@ FR-1.11.
   `GET /api/users` is ADMIN-only. Defense-in-depth — strength
   depends on NFR-1.6 header signing landing.
 
+**Recently built:**
+- `[BUILT FR-2.3..2.7]` Skills / experience / education / job-preferences /
+  recruiter sub-resources, all full-replace via PUT. Each save publishes
+  `ProfileUpdatedEvent` for Phase 2 Matching Service.
+
 **Planned additions:**
-- Skills, work experience, education sub-resources (FR-2.3 to FR-2.5)
-- Job preferences (FR-2.6)
-- Recruiter profile fields (FR-2.7)
 - `POST /api/users/profile/parse-resume` autofill endpoint (FR-4)
 
 ### Job Service `:8083` [PLANNED]
@@ -213,8 +226,9 @@ be wiped and rebuilt by replaying events.
   Fine-grained authz (FR-1.9, NFR-1.7, NFR-1.8) lives in each
   service.
 - Downstream services receive `X-User-Email` and `X-User-Role` from
-  gateway. **`[TARGET]`** These headers must be signed by gateway and
-  verified by services (NFR-1.6).
+  gateway. **`[DEFERRED]`** Headers should be HMAC-signed by gateway
+  and verified by services (NFR-1.6) — postponed to Phase 5; today
+  services trust the headers without verification.
 
 ### Event topology
 
@@ -226,7 +240,7 @@ be wiped and rebuilt by replaying events.
 | `job-updated` `[PLANNED]` | Job Service | Matching Service |
 | `application-submitted` `[PLANNED]` | Application Service | Matching Service, (Notification later) |
 | `application-status-changed` `[PLANNED]` | Application Service | (Notification later) |
-| `profile-updated` `[PLANNED]` | User Service | Matching Service |
+| `profile-updated` | User Service | Matching Service `[PLANNED]` |
 
 All Kafka payloads live in `CommonModules` package
 `com.jobportal.kafka_events`. Consumers restrict trusted packages to
@@ -288,16 +302,16 @@ ONLY when user explicitly saves the form.
 
 ## Phase 0: Known violations to fix
 
-These are intentional violations. Do not fix without coordinating.
-
 | ID | Issue | Fix approach |
 |---|---|---|
 | ~~NFR-1.3~~ | ~~Raw passwords on Kafka~~ | ✅ done — User Service BCrypts; event carries `passwordHash` |
-| NFR-1.5 | JWT secret has dev fallback in prod | `@PostConstruct` validation; fail-fast unless `spring.profiles.active=dev` |
-| NFR-1.6 | Services trust spoofable gateway headers | Gateway HMAC-signs the headers + a timestamp; services verify signature |
+| ~~NFR-1.5~~ | ~~JWT secret has dev fallback in prod~~ | ✅ done — `@PostConstruct` validator in auth-service and gateway aborts startup unless the `dev` profile is active or a non-default secret is supplied |
+| NFR-1.6 | Services trust spoofable gateway headers | ⏸️ deferred to Phase 5 — gateway will HMAC-sign headers + timestamp, services verify |
 | ~~NFR-1.8~~ | ~~Any user can edit any profile~~ | ✅ done — self-targeted `/me` endpoints take identity from gateway header |
 
-See `ROADMAP.md` for Phase 0 sequencing.
+Phase 0 is effectively closed (3 of 4 NFRs done; NFR-1.6 deferred).
+See `ROADMAP.md` Phase 5 for the entry covering NFR-1.6 and other
+deferred work.
 
 ---
 

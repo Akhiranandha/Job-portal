@@ -35,4 +35,6 @@ services:
       echo 'Topic user-registration created successfully'
       /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic delete-user --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1
       echo 'Topic delete-user created successfully'
+      /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic profile-updated --bootstrap-server kafka:29092 --partitions 3 --replication-factor 1
+      echo 'Topic profile-updated created successfully'
       "

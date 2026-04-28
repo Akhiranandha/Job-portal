@@ -7,6 +7,6 @@ import com.jobportal.authservice.dto.PasswordUpdateRequest;
 public interface AuthService {
     
     LoginResponse login(LoginRequest request);
-    
-    void updatePassword(PasswordUpdateRequest request);
+
+    void updatePassword(String email, PasswordUpdateRequest request);
 }

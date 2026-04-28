@@ -17,7 +17,7 @@ Phases are ordered. Don't skip ahead unless explicitly redirected.
 
 ---
 
-## ✅ Phase 0 — Foundation fixes (effectively closed)
+## ✅ Phase 0 — Foundation fixes (closed)
 
 Goal was to fix the four violated NFRs before building new services
 on top of broken foundations. Three are done; NFR-1.6 is consciously
@@ -30,11 +30,11 @@ deferred to Phase 5.
 | 3 | NFR-1.5 | Fail-fast JWT secret validation in non-dev profiles | ~30 min | ✅ done |
 | 4 | NFR-1.6 | Gateway signs headers, services verify (HMAC) | ~1 day | ⏸️ deferred to Phase 5 |
 
-Plus housekeeping (still open):
-- Add CORS config to Gateway (NFR-1.9)
-- Add basic rate limiting on `/auth/login` (NFR-1.10) — needs Redis
-- Move hardcoded MySQL credentials out of `application.properties`
-- `/auth/password` → require authentication
+Plus housekeeping:
+- ✅ CORS config on the Gateway (NFR-1.9) — `CorsWebFilter` bean in `apigatway`, origins via `CORS_ALLOWED_ORIGINS`
+- ⏸️ Rate limiting on `/auth/login` (NFR-1.10) — blocked on Redis, picked up in Phase 2
+- ✅ MySQL credentials externalized to `${DB_USERNAME}` / `${DB_PASSWORD}` (+ `DB_HOST` / `DB_PORT`)
+- ✅ `/auth/password` requires authentication — gateway applies `JwtAuthentication` filter, controller derives email from `X-User-Email`, body no longer carries `email`
 
 **Exit criteria:** the 3 fixed NFRs marked `[BUILT]` in
 `ARCHITECTURE.md`; NFR-1.6 marked `[DEFERRED]`. Phase 1 can start.
@@ -58,8 +58,9 @@ Cross-cutting in this phase:
 - Authz patterns from `CONVENTIONS.md` applied consistently
 - New events go in `CommonModules` (`mvn install` after each addition)
 
-**Profile sub-resources** (FR-2.3 to FR-2.7) added to User Service in
-parallel — can be done at any point during Phase 1.
+**Profile sub-resources** (FR-2.3 to FR-2.7) ✅ done — five full-replace
+PUT endpoints on User Service, plus `ProfileUpdatedEvent` producer ready
+for Matching Service consumption in Phase 2.
 
 **Exit criteria:** end-to-end demo possible — register → login → post
 job → upload resume → apply → recruiter sees application → recruiter

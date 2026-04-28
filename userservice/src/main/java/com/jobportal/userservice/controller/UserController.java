@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 
 @RestController
@@ -15,6 +16,8 @@ import java.util.List;
 public class UserController {
 
     private static final String ROLE_ADMIN = "ADMIN";
+    private static final String ROLE_JOB_SEEKER = "JOB_SEEKER";
+    private static final String ROLE_RECRUITER = "RECRUITER";
 
     private final UserService userService;
 
@@ -63,6 +66,61 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success("User deleted successfully", null));
     }
 
+    @PutMapping("/me/skills")
+    public ResponseEntity<ApiResponse<UserResponse>> updateSkills(
+            @Valid @RequestBody SkillsUpdateRequest request,
+            @RequestHeader(value = "X-User-Email", required = false) String requesterEmail,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        String email = requireAuthenticated(requesterEmail);
+        requireRoleOneOf(requesterRole, ROLE_JOB_SEEKER, ROLE_ADMIN);
+        UserResponse response = userService.updateSkills(email, request.getSkills());
+        return ResponseEntity.ok(ApiResponse.success("Skills updated successfully", response));
+    }
+
+    @PutMapping("/me/experience")
+    public ResponseEntity<ApiResponse<UserResponse>> updateExperience(
+            @Valid @RequestBody ExperienceUpdateRequest request,
+            @RequestHeader(value = "X-User-Email", required = false) String requesterEmail,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        String email = requireAuthenticated(requesterEmail);
+        requireRoleOneOf(requesterRole, ROLE_JOB_SEEKER, ROLE_ADMIN);
+        UserResponse response = userService.updateExperience(email, request.getExperience());
+        return ResponseEntity.ok(ApiResponse.success("Experience updated successfully", response));
+    }
+
+    @PutMapping("/me/education")
+    public ResponseEntity<ApiResponse<UserResponse>> updateEducation(
+            @Valid @RequestBody EducationUpdateRequest request,
+            @RequestHeader(value = "X-User-Email", required = false) String requesterEmail,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        String email = requireAuthenticated(requesterEmail);
+        requireRoleOneOf(requesterRole, ROLE_JOB_SEEKER, ROLE_ADMIN);
+        UserResponse response = userService.updateEducation(email, request.getEducation());
+        return ResponseEntity.ok(ApiResponse.success("Education updated successfully", response));
+    }
+
+    @PutMapping("/me/preferences")
+    public ResponseEntity<ApiResponse<UserResponse>> updatePreferences(
+            @Valid @RequestBody JobPreferencesDto preferences,
+            @RequestHeader(value = "X-User-Email", required = false) String requesterEmail,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        String email = requireAuthenticated(requesterEmail);
+        requireRoleOneOf(requesterRole, ROLE_JOB_SEEKER, ROLE_ADMIN);
+        UserResponse response = userService.updatePreferences(email, preferences);
+        return ResponseEntity.ok(ApiResponse.success("Preferences updated successfully", response));
+    }
+
+    @PutMapping("/me/recruiter")
+    public ResponseEntity<ApiResponse<UserResponse>> updateRecruiterProfile(
+            @Valid @RequestBody RecruiterProfileRequest request,
+            @RequestHeader(value = "X-User-Email", required = false) String requesterEmail,
+            @RequestHeader(value = "X-User-Role", required = false) String requesterRole) {
+        String email = requireAuthenticated(requesterEmail);
+        requireRoleOneOf(requesterRole, ROLE_RECRUITER, ROLE_ADMIN);
+        UserResponse response = userService.updateRecruiterProfile(email, request);
+        return ResponseEntity.ok(ApiResponse.success("Recruiter profile updated successfully", response));
+    }
+
     private String requireAuthenticated(String requesterEmail) {
         if (requesterEmail == null || requesterEmail.isBlank()) {
             throw new ForbiddenException("Authentication context missing");
@@ -73,6 +131,12 @@ public class UserController {
     private void requireAdmin(String requesterRole) {
         if (!ROLE_ADMIN.equals(requesterRole)) {
             throw new ForbiddenException("ADMIN role required");
+        }
+    }
+
+    private void requireRoleOneOf(String requesterRole, String... allowed) {
+        if (requesterRole == null || Arrays.stream(allowed).noneMatch(requesterRole::equals)) {
+            throw new ForbiddenException("Role required: one of " + String.join(", ", allowed));
         }
     }
 }

@@ -25,11 +25,11 @@ For *how*, see `ARCHITECTURE.md`.
 ### FR-2. Profile Management
 - **FR-2.1** Candidate can view their profile ✅ done
 - **FR-2.2** Candidate can edit their profile ✅ done
-- **FR-2.3** Candidate can add/edit/delete skills
-- **FR-2.4** Candidate can add/edit/delete work experience entries
-- **FR-2.5** Candidate can add/edit/delete education entries
-- **FR-2.6** Candidate can set job preferences (location, salary range, remote, employment type)
-- **FR-2.7** Recruiter has a separate profile (company, designation, company website)
+- **FR-2.3** Candidate can add/edit/delete skills ✅ done
+- **FR-2.4** Candidate can add/edit/delete work experience entries ✅ done
+- **FR-2.5** Candidate can add/edit/delete education entries ✅ done
+- **FR-2.6** Candidate can set job preferences (location, salary range, remote, employment type) ✅ done
+- **FR-2.7** Recruiter has a separate profile (company, designation, company website) ✅ done
 
 ### FR-3. Resume Management (Multi-Resume, Cap 5)
 - **FR-3.1** Candidate can have up to 5 active resumes (PDF/DOCX, ≤5MB each)
