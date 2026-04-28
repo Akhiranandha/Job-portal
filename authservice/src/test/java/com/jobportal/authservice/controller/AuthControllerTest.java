@@ -116,12 +116,12 @@ class AuthControllerTest {
     @Test
     void updatePassword_success_returns200WithPlainTextBody() throws Exception {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("alice@example.com")
                 .currentPassword("oldPlain")
                 .newPassword("newPlainPassword")
                 .build();
 
         mockMvc.perform(put("/auth/password")
+                        .header("X-User-Email", "alice@example.com")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -129,17 +129,32 @@ class AuthControllerTest {
     }
 
     @Test
+    void updatePassword_missingUserHeader_returns403Forbidden() throws Exception {
+        PasswordUpdateRequest request = PasswordUpdateRequest.builder()
+                .currentPassword("oldPlain")
+                .newPassword("newPlainPassword")
+                .build();
+
+        mockMvc.perform(put("/auth/password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    @Test
     void updatePassword_wrongCurrentPassword_returns401WithInvalidCredentials() throws Exception {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("alice@example.com")
                 .currentPassword("wrongOld")
                 .newPassword("newPlainPassword")
                 .build();
 
         doThrow(new AuthenticationException("Current password is incorrect"))
-                .when(authService).updatePassword(any(PasswordUpdateRequest.class));
+                .when(authService).updatePassword(any(String.class), any(PasswordUpdateRequest.class));
 
         mockMvc.perform(put("/auth/password")
+                        .header("X-User-Email", "alice@example.com")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
@@ -152,15 +167,15 @@ class AuthControllerTest {
     @Test
     void updatePassword_userNotFound_returns404WithUserNotFound() throws Exception {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("ghost@example.com")
                 .currentPassword("oldPlain")
                 .newPassword("newPlainPassword")
                 .build();
 
         doThrow(new UserNotFoundException("User not found with email: ghost@example.com"))
-                .when(authService).updatePassword(any(PasswordUpdateRequest.class));
+                .when(authService).updatePassword(any(String.class), any(PasswordUpdateRequest.class));
 
         mockMvc.perform(put("/auth/password")
+                        .header("X-User-Email", "ghost@example.com")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())

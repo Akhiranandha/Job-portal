@@ -53,9 +53,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public void updatePassword(PasswordUpdateRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + request.getEmail()));
+    public void updatePassword(String email, PasswordUpdateRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
 
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
             throw new AuthenticationException("Current password is incorrect");

@@ -1,5 +1,8 @@
 package com.jobportal.userservice.entity;
 
+import com.jobportal.userservice.entity.converter.MapJsonConverter;
+import com.jobportal.userservice.entity.converter.MapListJsonConverter;
+import com.jobportal.userservice.entity.converter.StringListJsonConverter;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -11,6 +14,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Entity
 @Table(name = "users")
@@ -77,6 +82,33 @@ public class User {
 
     @Column(name = "portfolio_url", length = 500)
     private String portfolioUrl;
+
+    // Candidate-only profile fields. NULL for recruiters by convention.
+    @Convert(converter = StringListJsonConverter.class)
+    @Column(columnDefinition = "JSON")
+    private List<String> skills;
+
+    @Convert(converter = MapListJsonConverter.class)
+    @Column(columnDefinition = "JSON")
+    private List<Map<String, Object>> experience;
+
+    @Convert(converter = MapListJsonConverter.class)
+    @Column(columnDefinition = "JSON")
+    private List<Map<String, Object>> education;
+
+    @Convert(converter = MapJsonConverter.class)
+    @Column(name = "job_preferences", columnDefinition = "JSON")
+    private Map<String, Object> jobPreferences;
+
+    // Recruiter-only profile fields. NULL for candidates by convention.
+    @Column(name = "company_name", length = 200)
+    private String companyName;
+
+    @Column(length = 200)
+    private String designation;
+
+    @Column(name = "company_website", length = 500)
+    private String companyWebsite;
 
     @PrePersist
     protected void onCreate() {

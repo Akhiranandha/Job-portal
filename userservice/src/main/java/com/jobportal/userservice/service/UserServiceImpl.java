@@ -1,5 +1,6 @@
 package com.jobportal.userservice.service;
 
+import com.jobportal.kafka_events.ProfileUpdatedEvent;
 import com.jobportal.kafka_events.UserDeleteEvent;
 import com.jobportal.kafka_events.UserRegistrationEvent;
 import com.jobportal.userservice.dto.*;
@@ -16,7 +17,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -111,5 +116,113 @@ public class UserServiceImpl implements UserService {
         UserDeleteEvent deleteEvent = new UserDeleteEvent(email);
         kafkaProducer.sendUserDeleteEvent(deleteEvent);
         logger.info("User delete event sent to auth service via Kafka for email: {}", email);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateSkills(String email, List<String> skills) {
+        User user = requireActiveUser(email);
+        user.setSkills(skills == null ? null : new ArrayList<>(skills));
+        return saveAndPublish(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateExperience(String email, List<ExperienceEntry> entries) {
+        User user = requireActiveUser(email);
+        user.setExperience(toMapList(entries, this::experienceEntryToMap));
+        return saveAndPublish(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateEducation(String email, List<EducationEntry> entries) {
+        User user = requireActiveUser(email);
+        user.setEducation(toMapList(entries, this::educationEntryToMap));
+        return saveAndPublish(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updatePreferences(String email, JobPreferencesDto preferences) {
+        User user = requireActiveUser(email);
+        user.setJobPreferences(preferences == null ? null : preferencesToMap(preferences));
+        return saveAndPublish(user);
+    }
+
+    @Override
+    @Transactional
+    public UserResponse updateRecruiterProfile(String email, RecruiterProfileRequest request) {
+        User user = requireActiveUser(email);
+        user.setCompanyName(request.getCompanyName());
+        user.setDesignation(request.getDesignation());
+        user.setCompanyWebsite(request.getCompanyWebsite());
+        return saveAndPublish(user);
+    }
+
+    private User requireActiveUser(String email) {
+        return userRepository.findByEmailAndIsActiveTrue(email)
+                .orElseThrow(() -> new UserNotFoundException("User not found with email: " + email));
+    }
+
+    private UserResponse saveAndPublish(User user) {
+        User saved = userRepository.save(user);
+        logger.info("Profile updated for email: {}", saved.getEmail());
+
+        ProfileUpdatedEvent event = ProfileUpdatedEvent.builder()
+                .email(saved.getEmail())
+                .role(saved.getRole().name())
+                .skills(saved.getSkills())
+                .experience(saved.getExperience())
+                .education(saved.getEducation())
+                .jobPreferences(saved.getJobPreferences())
+                .companyName(saved.getCompanyName())
+                .designation(saved.getDesignation())
+                .companyWebsite(saved.getCompanyWebsite())
+                .updatedAt(saved.getUpdatedAt() == null
+                        ? Instant.now()
+                        : saved.getUpdatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant())
+                .build();
+
+        kafkaProducer.sendProfileUpdatedEvent(event);
+        return modelMapper.map(saved, UserResponse.class);
+    }
+
+    private <T> List<Map<String, Object>> toMapList(List<T> entries, java.util.function.Function<T, Map<String, Object>> mapper) {
+        if (entries == null) {
+            return null;
+        }
+        return entries.stream().map(mapper).collect(Collectors.toList());
+    }
+
+    private Map<String, Object> experienceEntryToMap(ExperienceEntry e) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("company", e.getCompany());
+        m.put("role", e.getRole());
+        m.put("startDate", e.getStartDate());
+        m.put("endDate", e.getEndDate());
+        m.put("description", e.getDescription());
+        return m;
+    }
+
+    private Map<String, Object> educationEntryToMap(EducationEntry e) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("institution", e.getInstitution());
+        m.put("degree", e.getDegree());
+        m.put("field", e.getField());
+        m.put("startYear", e.getStartYear());
+        m.put("endYear", e.getEndYear());
+        return m;
+    }
+
+    private Map<String, Object> preferencesToMap(JobPreferencesDto p) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("locations", p.getLocations());
+        m.put("salaryMin", p.getSalaryMin());
+        m.put("salaryMax", p.getSalaryMax());
+        m.put("currency", p.getCurrency() == null ? "INR" : p.getCurrency());
+        m.put("remote", p.getRemote());
+        m.put("employmentTypes", p.getEmploymentTypes());
+        return m;
     }
 }

@@ -1,6 +1,13 @@
 package com.jobportal.userservice.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.jobportal.userservice.dto.EducationEntry;
+import com.jobportal.userservice.dto.EducationUpdateRequest;
+import com.jobportal.userservice.dto.ExperienceEntry;
+import com.jobportal.userservice.dto.ExperienceUpdateRequest;
+import com.jobportal.userservice.dto.JobPreferencesDto;
+import com.jobportal.userservice.dto.RecruiterProfileRequest;
+import com.jobportal.userservice.dto.SkillsUpdateRequest;
 import com.jobportal.userservice.dto.UserRegistrationRequest;
 import com.jobportal.userservice.dto.UserResponse;
 import com.jobportal.userservice.dto.UserUpdateRequest;
@@ -324,5 +331,218 @@ class UserControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.message").value("Not allowed"))
                 .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+    }
+
+    // ---------- PUT /api/users/me/skills ----------
+
+    @Test
+    @DisplayName("PUT /me/skills: 200 happy path for JOB_SEEKER")
+    void updateSkills_success() throws Exception {
+        SkillsUpdateRequest body = SkillsUpdateRequest.builder()
+                .skills(List.of("Java", "Kafka"))
+                .build();
+
+        when(userService.updateSkills(eq("jane.doe@example.com"), any())).thenReturn(userResponse);
+
+        mockMvc.perform(put("/api/users/me/skills")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("Skills updated successfully"));
+    }
+
+    @Test
+    @DisplayName("PUT /me/skills: 403 when X-User-Role is RECRUITER")
+    void updateSkills_recruiterForbidden() throws Exception {
+        SkillsUpdateRequest body = SkillsUpdateRequest.builder().skills(List.of("Java")).build();
+
+        mockMvc.perform(put("/api/users/me/skills")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "RECRUITER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+
+        verify(userService, never()).updateSkills(any(), any());
+    }
+
+    @Test
+    @DisplayName("PUT /me/skills: 400 VALIDATION_FAILED when skills array missing")
+    void updateSkills_validation() throws Exception {
+        mockMvc.perform(put("/api/users/me/skills")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors.skills").exists());
+    }
+
+    // ---------- PUT /api/users/me/experience ----------
+
+    @Test
+    @DisplayName("PUT /me/experience: 200 for JOB_SEEKER with valid entry")
+    void updateExperience_success() throws Exception {
+        ExperienceUpdateRequest body = ExperienceUpdateRequest.builder()
+                .experience(List.of(ExperienceEntry.builder()
+                        .company("Acme")
+                        .role("Backend Engineer")
+                        .startDate("2022-01")
+                        .endDate("2024-06")
+                        .description("Built event-driven payment service")
+                        .build()))
+                .build();
+
+        when(userService.updateExperience(eq("jane.doe@example.com"), any())).thenReturn(userResponse);
+
+        mockMvc.perform(put("/api/users/me/experience")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Experience updated successfully"));
+    }
+
+    @Test
+    @DisplayName("PUT /me/experience: 400 VALIDATION_FAILED when startDate has wrong format")
+    void updateExperience_badStartDate() throws Exception {
+        String body = "{\"experience\":[{\"company\":\"Acme\",\"role\":\"Eng\",\"startDate\":\"2022/01\"}]}";
+
+        mockMvc.perform(put("/api/users/me/experience")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
+    }
+
+    // ---------- PUT /api/users/me/education ----------
+
+    @Test
+    @DisplayName("PUT /me/education: 200 for JOB_SEEKER with valid entry")
+    void updateEducation_success() throws Exception {
+        EducationUpdateRequest body = EducationUpdateRequest.builder()
+                .education(List.of(EducationEntry.builder()
+                        .institution("IIT Bombay")
+                        .degree("B.Tech")
+                        .field("Computer Science")
+                        .startYear(2018)
+                        .endYear(2022)
+                        .build()))
+                .build();
+
+        when(userService.updateEducation(eq("jane.doe@example.com"), any())).thenReturn(userResponse);
+
+        mockMvc.perform(put("/api/users/me/education")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Education updated successfully"));
+    }
+
+    // ---------- PUT /api/users/me/preferences ----------
+
+    @Test
+    @DisplayName("PUT /me/preferences: 200 for JOB_SEEKER with valid prefs")
+    void updatePreferences_success() throws Exception {
+        JobPreferencesDto prefs = JobPreferencesDto.builder()
+                .locations(List.of("Bangalore", "Remote"))
+                .salaryMin(1_500_000L)
+                .salaryMax(3_000_000L)
+                .currency("INR")
+                .remote(true)
+                .employmentTypes(List.of("FULL_TIME", "CONTRACT"))
+                .build();
+
+        when(userService.updatePreferences(eq("jane.doe@example.com"), any())).thenReturn(userResponse);
+
+        mockMvc.perform(put("/api/users/me/preferences")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(prefs)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Preferences updated successfully"));
+    }
+
+    @Test
+    @DisplayName("PUT /me/preferences: 400 cross-field when salaryMin > salaryMax")
+    void updatePreferences_invalidSalaryRange() throws Exception {
+        JobPreferencesDto prefs = JobPreferencesDto.builder()
+                .salaryMin(2_000_000L)
+                .salaryMax(1_000_000L)
+                .build();
+
+        mockMvc.perform(put("/api/users/me/preferences")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(prefs)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"));
+    }
+
+    // ---------- PUT /api/users/me/recruiter ----------
+
+    @Test
+    @DisplayName("PUT /me/recruiter: 200 for RECRUITER")
+    void updateRecruiter_success() throws Exception {
+        RecruiterProfileRequest body = RecruiterProfileRequest.builder()
+                .companyName("Acme Inc")
+                .designation("Talent Lead")
+                .companyWebsite("https://acme.example")
+                .build();
+
+        when(userService.updateRecruiterProfile(eq("rec@example.com"), any())).thenReturn(userResponse);
+
+        mockMvc.perform(put("/api/users/me/recruiter")
+                        .header("X-User-Email", "rec@example.com")
+                        .header("X-User-Role", "RECRUITER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Recruiter profile updated successfully"));
+    }
+
+    @Test
+    @DisplayName("PUT /me/recruiter: 403 when caller is JOB_SEEKER")
+    void updateRecruiter_jobSeekerForbidden() throws Exception {
+        RecruiterProfileRequest body = RecruiterProfileRequest.builder()
+                .companyName("Acme Inc")
+                .build();
+
+        mockMvc.perform(put("/api/users/me/recruiter")
+                        .header("X-User-Email", "jane.doe@example.com")
+                        .header("X-User-Role", "JOB_SEEKER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error").value("FORBIDDEN"));
+
+        verify(userService, never()).updateRecruiterProfile(any(), any());
+    }
+
+    @Test
+    @DisplayName("PUT /me/recruiter: 400 when companyName is blank")
+    void updateRecruiter_validation() throws Exception {
+        String body = "{\"companyName\":\"\"}";
+
+        mockMvc.perform(put("/api/users/me/recruiter")
+                        .header("X-User-Email", "rec@example.com")
+                        .header("X-User-Role", "RECRUITER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors.companyName").exists());
     }
 }

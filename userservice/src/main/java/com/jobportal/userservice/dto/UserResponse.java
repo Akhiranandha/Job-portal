@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -31,4 +33,15 @@ public class UserResponse {
     private LocalDateTime updatedAt;
     private String linkedInUrl;
     private String portfolioUrl;
+
+    // Candidate-only fields (null for recruiters)
+    private List<String> skills;
+    private List<Map<String, Object>> experience;
+    private List<Map<String, Object>> education;
+    private Map<String, Object> jobPreferences;
+
+    // Recruiter-only fields (null for candidates)
+    private String companyName;
+    private String designation;
+    private String companyWebsite;
 }

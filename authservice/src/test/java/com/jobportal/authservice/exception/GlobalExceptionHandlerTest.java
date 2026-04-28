@@ -71,6 +71,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleForbiddenException_returns403WithForbidden() {
+        ForbiddenException ex = new ForbiddenException("Authentication context missing");
+
+        ResponseEntity<ErrorResponse> response = handler.handleForbiddenException(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        ErrorResponse body = response.getBody();
+        assertThat(body).isNotNull();
+        assertThat(body.success()).isFalse();
+        assertThat(body.message()).isEqualTo("Authentication context missing");
+        assertThat(body.error()).isEqualTo("FORBIDDEN");
+        assertThat(body.timestamp()).isNotNull();
+    }
+
+    @Test
     void handleGenericException_returns500WithInternalErrorAndNoLeak() {
         Exception ex = new RuntimeException("boom: should not leak to client");
 

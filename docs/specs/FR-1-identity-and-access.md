@@ -52,14 +52,14 @@ Let candidates, recruiters, and admins create accounts, authenticate, and access
 - **API surface:**
   - `POST /api/users/public/register` — public, no JWT. Creates `userdb.users` row, hashes password, publishes `UserRegistrationEvent`.
   - `POST /auth/login` — public, no JWT. Verifies BCrypt, returns JWT.
-  - `PUT /auth/password` — change password (currently open; tightening to "JWT-required" is Phase 0 housekeeping).
+  - `PUT /auth/password` — change password. JWT-required at the gateway; target email is taken from `X-User-Email` so a logged-in user can only change their own password. Body is `{ currentPassword, newPassword }` only.
   - `GET /api/users` — `ADMIN` only.
   - `GET /api/users/me`, `PUT /api/users/me`, `DELETE /api/users/me` — self-targeted (identity from `X-User-Email`).
 - **Events produced/consumed:**
   - `user-registration` (User Service → Auth Service): creates `auth_db.users` row, storing the BCrypt hash verbatim.
   - `delete-user` (User Service → Auth Service): sets `auth_db.users.is_active = FALSE`.
 - **Cross-service interactions:** JWT issued by Auth Service. Gateway validates HMAC-signed JWT and injects `X-User-Email` and `X-User-Role` headers downstream. Per `CONVENTIONS.md`, services use the self-targeted authz pattern (read identity from `X-User-Email`) for self-only operations and the self-or-admin or role-required patterns for everything else.
-- **Status:** `[BUILT]` for FR-1.1, FR-1.3, FR-1.6, FR-1.10, NFR-1.2, NFR-1.3, NFR-1.5, NFR-1.11. `[PARTIAL]` for the gateway (no CORS, no rate limiting, no correlation ID injection yet).
+- **Status:** `[BUILT]` for FR-1.1, FR-1.3, FR-1.6, FR-1.10, NFR-1.2, NFR-1.3, NFR-1.5, NFR-1.9, NFR-1.11. `[PARTIAL]` for the gateway (no rate limiting until Redis lands in Phase 2; no correlation ID injection yet).
 - **Frontend (Phase 3, `[PLANNED]`):**
   - **Stack:** React 19 + React-Bootstrap 2.10+ (Bootstrap 5), React Router 6, axios, `react-hook-form` for the register form, Jest 29 + `@testing-library/react` for tests. Node 24.14.1 dev runtime.
   - **Routes:** `/login` (public), `/register` (public), `/settings` or `/profile/security` for password change and soft-delete (authenticated). Every other authenticated route is wrapped in `<RequireAuth>` (redirects to `/login`).
@@ -74,7 +74,7 @@ Let candidates, recruiters, and admins create accounts, authenticate, and access
 - Email verification (FR-1.8) — deferred to Phase 5. (`is_email_verified` already exists on `userdb.users` but is unused.)
 - Admin user management against arbitrary emails (FR-1.11) — deferred to Phase 5. No `{email}`-parameterised admin endpoints in scope.
 - Gateway-signed identity headers / HMAC verification (NFR-1.6) — deferred to Phase 5. Today services trust `X-User-Email` and `X-User-Role` without signature checks; mitigated by binding services to localhost in dev.
-- CORS and rate limiting on the gateway (NFR-1.9, NFR-1.10) — tracked separately as Phase 0 housekeeping; see `docs/ROADMAP.md`.
+- Rate limiting on the gateway (NFR-1.10) — blocked on Redis (Phase 2). CORS (NFR-1.9) is now in place via `CorsWebFilter`.
 - Profile content (skills/experience/education/preferences/recruiter fields) — see `FR-2-profile-management.md`.
 
 ## Edge Cases / Open Questions
@@ -82,8 +82,8 @@ Let candidates, recruiters, and admins create accounts, authenticate, and access
 - **Edge case:** Eventual consistency between `userdb.users` (created first) and `auth_db.users` (created via Kafka). A user may attempt to log in before the `user-registration` event has been consumed. UI must handle "credentials not yet provisioned" gracefully (NFR-2.4).
 - **Edge case:** Gateway header trust. Until NFR-1.6 lands in Phase 5, an attacker who can reach `:8081`/`:8082` directly can spoof `X-User-Email`/`X-User-Role`. Mitigation today: services bind to localhost; only the gateway is exposed.
 - **Edge case:** Soft-delete reversal. There is no "undelete" endpoint. If a user re-registers with the same email after soft-delete, decide whether to reactivate the existing rows or reject — current behaviour is unspecified.
-- **Open question:** Should `/auth/password` require JWT? Listed as Phase 0 housekeeping in `docs/ROADMAP.md`; currently open per current security config.
-- **Open question:** Hardcoded MySQL credentials in `application.properties` — Phase 0 housekeeping item, still open.
+- ~~**Open question:** Should `/auth/password` require JWT?~~ Closed — gateway now applies the `JwtAuthentication` filter and the controller derives the target email from `X-User-Email`.
+- ~~**Open question:** Hardcoded MySQL credentials in `application.properties`?~~ Closed — both services now read `${DB_USERNAME}` / `${DB_PASSWORD}` (also `DB_HOST`, `DB_PORT`).
 - **Open question:** Account locking after N failed login attempts — not in PRODUCT.md. Decide before Phase 5 if this becomes a stretch goal.
 - **Edge case (UI):** JWT expires mid-session (NFR-1.4 caps the access token at 3 hours and refresh tokens are deferred). The axios response interceptor **must** detect 401 from the gateway and redirect to `/login`, surfacing a Bootstrap toast "Session expired — please log in again" instead of dropping the user on a blank page.
 - **Edge case (UI):** Registration eventual consistency. After a successful register response, an immediate login may fail because the `user-registration` event has not yet been consumed by Auth Service. The login form **should** retry once after a short delay before showing "Credentials not yet provisioned, please try again."

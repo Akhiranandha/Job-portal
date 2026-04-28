@@ -6,14 +6,14 @@ before making changes.**
 
 ## Where to look first
 
-| Question                                                      | File                   |
-| ------------------------------------------------------------- | ---------------------- |
-| What are we building (features)?                              | `docs/PRODUCT.md`      |
+| Question                                                                | File                   |
+| ----------------------------------------------------------------------- | ---------------------- |
+| What are we building (features)?                                        | `docs/PRODUCT.md`      |
 | Per-feature specs (Goal, Reqs, Stories, Tech, Out of scope, Edge cases) | `docs/specs/`          |
-| How is the system designed?                                   | `docs/ARCHITECTURE.md` |
-| What does each table look like?                               | `docs/SCHEMAS.md`      |
-| Coding rules for this project                                 | `docs/CONVENTIONS.md`  |
-| What's done, what's next                                      | `docs/ROADMAP.md`      |
+| How is the system designed?                                             | `docs/ARCHITECTURE.md` |
+| What does each table look like?                                         | `docs/SCHEMAS.md`      |
+| Coding rules for this project                                           | `docs/CONVENTIONS.md`  |
+| What's done, what's next                                                | `docs/ROADMAP.md`      |
 
 ## Most important things to know
 
@@ -100,3 +100,5 @@ Kafka → discovery-service → auth-service + user-service → api-gateway
 Other services join as they're built.
 
 Don't run tests after each change unless i explicitly tell you to.
+
+Don't add commit or push for any changes until I'll tell you to do that

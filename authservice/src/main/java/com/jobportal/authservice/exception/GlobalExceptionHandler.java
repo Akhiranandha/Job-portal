@@ -32,6 +32,12 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponse.of(ex.getMessage(), ErrorCode.USER_NOT_FOUND));
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbiddenException(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(ex.getMessage(), ErrorCode.FORBIDDEN));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> fieldErrors = new HashMap<>();

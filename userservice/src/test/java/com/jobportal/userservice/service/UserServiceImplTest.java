@@ -1,7 +1,12 @@
 package com.jobportal.userservice.service;
 
+import com.jobportal.kafka_events.ProfileUpdatedEvent;
 import com.jobportal.kafka_events.UserDeleteEvent;
 import com.jobportal.kafka_events.UserRegistrationEvent;
+import com.jobportal.userservice.dto.EducationEntry;
+import com.jobportal.userservice.dto.ExperienceEntry;
+import com.jobportal.userservice.dto.JobPreferencesDto;
+import com.jobportal.userservice.dto.RecruiterProfileRequest;
 import com.jobportal.userservice.dto.UserRegistrationRequest;
 import com.jobportal.userservice.dto.UserResponse;
 import com.jobportal.userservice.dto.UserUpdateRequest;
@@ -286,5 +291,183 @@ class UserServiceImplTest {
 
         verify(userRepository, times(1)).save(any(User.class));
         verify(kafkaProducer, times(1)).sendUserDeleteEvent(any(UserDeleteEvent.class));
+    }
+
+    // ---------- updateSkills ----------
+
+    @Test
+    @DisplayName("updateSkills: saves new skills and publishes ProfileUpdatedEvent")
+    void updateSkills_success() {
+        when(userRepository.findByEmailAndIsActiveTrue("jane.doe@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        UserResponse result = userService.updateSkills("jane.doe@example.com", List.of("Java", "Kafka"));
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getSkills()).containsExactly("Java", "Kafka");
+
+        ArgumentCaptor<ProfileUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(ProfileUpdatedEvent.class);
+        verify(kafkaProducer).sendProfileUpdatedEvent(eventCaptor.capture());
+        ProfileUpdatedEvent event = eventCaptor.getValue();
+        assertThat(event.getEmail()).isEqualTo("jane.doe@example.com");
+        assertThat(event.getRole()).isEqualTo("JOB_SEEKER");
+        assertThat(event.getSkills()).containsExactly("Java", "Kafka");
+        assertThat(event.getUpdatedAt()).isNotNull();
+
+        assertThat(result).isSameAs(expectedResponse);
+    }
+
+    @Test
+    @DisplayName("updateSkills: throws UserNotFoundException; no save or event")
+    void updateSkills_notFound() {
+        when(userRepository.findByEmailAndIsActiveTrue("ghost@example.com"))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.updateSkills("ghost@example.com", List.of("Java")))
+                .isInstanceOf(UserNotFoundException.class);
+
+        verify(userRepository, never()).save(any());
+        verify(kafkaProducer, never()).sendProfileUpdatedEvent(any());
+    }
+
+    @Test
+    @DisplayName("updateSkills: empty list clears skills (passed through)")
+    void updateSkills_emptyList() {
+        when(userRepository.findByEmailAndIsActiveTrue("jane.doe@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        userService.updateSkills("jane.doe@example.com", List.of());
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getSkills()).isEmpty();
+    }
+
+    // ---------- updateExperience ----------
+
+    @Test
+    @DisplayName("updateExperience: persists entry as Map, publishes event")
+    void updateExperience_success() {
+        ExperienceEntry entry = ExperienceEntry.builder()
+                .company("Acme")
+                .role("Backend Engineer")
+                .startDate("2022-01")
+                .endDate("2024-06")
+                .description("Built event-driven payment service")
+                .build();
+
+        when(userRepository.findByEmailAndIsActiveTrue("jane.doe@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        userService.updateExperience("jane.doe@example.com", List.of(entry));
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getExperience()).hasSize(1);
+        assertThat(userCaptor.getValue().getExperience().get(0))
+                .containsEntry("company", "Acme")
+                .containsEntry("role", "Backend Engineer")
+                .containsEntry("startDate", "2022-01");
+
+        verify(kafkaProducer).sendProfileUpdatedEvent(any(ProfileUpdatedEvent.class));
+    }
+
+    // ---------- updateEducation ----------
+
+    @Test
+    @DisplayName("updateEducation: persists entry as Map, publishes event")
+    void updateEducation_success() {
+        EducationEntry entry = EducationEntry.builder()
+                .institution("IIT Bombay")
+                .degree("B.Tech")
+                .field("Computer Science")
+                .startYear(2018)
+                .endYear(2022)
+                .build();
+
+        when(userRepository.findByEmailAndIsActiveTrue("jane.doe@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        userService.updateEducation("jane.doe@example.com", List.of(entry));
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getEducation()).hasSize(1);
+        assertThat(userCaptor.getValue().getEducation().get(0))
+                .containsEntry("institution", "IIT Bombay")
+                .containsEntry("startYear", 2018);
+
+        verify(kafkaProducer).sendProfileUpdatedEvent(any(ProfileUpdatedEvent.class));
+    }
+
+    // ---------- updatePreferences ----------
+
+    @Test
+    @DisplayName("updatePreferences: persists Map with INR default when currency null")
+    void updatePreferences_currencyDefault() {
+        JobPreferencesDto prefs = JobPreferencesDto.builder()
+                .locations(List.of("Bangalore"))
+                .salaryMin(100L)
+                .salaryMax(200L)
+                .remote(true)
+                .employmentTypes(List.of("FULL_TIME"))
+                .build();
+
+        when(userRepository.findByEmailAndIsActiveTrue("jane.doe@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        userService.updatePreferences("jane.doe@example.com", prefs);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getJobPreferences())
+                .containsEntry("currency", "INR")
+                .containsEntry("salaryMin", 100L)
+                .containsEntry("salaryMax", 200L);
+
+        verify(kafkaProducer).sendProfileUpdatedEvent(any(ProfileUpdatedEvent.class));
+    }
+
+    // ---------- updateRecruiterProfile ----------
+
+    @Test
+    @DisplayName("updateRecruiterProfile: persists company fields, publishes event with recruiter slice")
+    void updateRecruiterProfile_success() {
+        savedUser.setRole(User.Role.RECRUITER);
+        RecruiterProfileRequest req = RecruiterProfileRequest.builder()
+                .companyName("Acme Inc")
+                .designation("Talent Lead")
+                .companyWebsite("https://acme.example")
+                .build();
+
+        when(userRepository.findByEmailAndIsActiveTrue("rec@example.com"))
+                .thenReturn(Optional.of(savedUser));
+        when(userRepository.save(savedUser)).thenReturn(savedUser);
+        when(modelMapper.map(savedUser, UserResponse.class)).thenReturn(expectedResponse);
+
+        userService.updateRecruiterProfile("rec@example.com", req);
+
+        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getCompanyName()).isEqualTo("Acme Inc");
+        assertThat(userCaptor.getValue().getDesignation()).isEqualTo("Talent Lead");
+        assertThat(userCaptor.getValue().getCompanyWebsite()).isEqualTo("https://acme.example");
+
+        ArgumentCaptor<ProfileUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(ProfileUpdatedEvent.class);
+        verify(kafkaProducer).sendProfileUpdatedEvent(eventCaptor.capture());
+        ProfileUpdatedEvent event = eventCaptor.getValue();
+        assertThat(event.getRole()).isEqualTo("RECRUITER");
+        assertThat(event.getCompanyName()).isEqualTo("Acme Inc");
     }
 }

@@ -1,5 +1,6 @@
 package com.jobportal.userservice.kafka;
 
+import com.jobportal.kafka_events.ProfileUpdatedEvent;
 import com.jobportal.kafka_events.UserDeleteEvent;
 import com.jobportal.kafka_events.UserRegistrationEvent;
 import org.apache.kafka.clients.producer.RecordMetadata;
@@ -31,14 +32,18 @@ class KafkaProducerTest {
     @Mock
     private KafkaTemplate<String, UserDeleteEvent> deleteTemplate;
 
+    @Mock
+    private KafkaTemplate<String, ProfileUpdatedEvent> profileUpdatedTemplate;
+
     private KafkaProducer kafkaProducer;
 
     @BeforeEach
     void setUp() {
-        kafkaProducer = new KafkaProducer(registrationTemplate, deleteTemplate);
+        kafkaProducer = new KafkaProducer(registrationTemplate, deleteTemplate, profileUpdatedTemplate);
         // The producer reads topic names from @Value-bound fields. Mirror application.properties values.
         ReflectionTestUtils.setField(kafkaProducer, "userRegistrationTopic", "user-registration");
         ReflectionTestUtils.setField(kafkaProducer, "deleteUserTopic", "delete-user");
+        ReflectionTestUtils.setField(kafkaProducer, "profileUpdatedTopic", "profile-updated");
     }
 
     @Test
@@ -122,5 +127,32 @@ class KafkaProducerTest {
         RecordMetadata md = new RecordMetadata(new TopicPartition(topic, 0), 0L, 0, 0L, 0, 0);
         SendResult<String, UserDeleteEvent> result = new SendResult<>(null, md);
         return CompletableFuture.completedFuture(result);
+    }
+
+    @Test
+    @DisplayName("sendProfileUpdatedEvent: publishes to 'profile-updated' with email key")
+    void sendProfileUpdatedEvent_publishesToCorrectTopic() {
+        ProfileUpdatedEvent event = ProfileUpdatedEvent.builder()
+                .email("jane.doe@example.com")
+                .role("JOB_SEEKER")
+                .build();
+
+        RecordMetadata md = new RecordMetadata(new TopicPartition("profile-updated", 0), 0L, 0, 0L, 0, 0);
+        SendResult<String, ProfileUpdatedEvent> result = new SendResult<>(null, md);
+        when(profileUpdatedTemplate.send(eq("profile-updated"), eq("jane.doe@example.com"), eq(event)))
+                .thenReturn(CompletableFuture.completedFuture(result));
+
+        kafkaProducer.sendProfileUpdatedEvent(event);
+
+        ArgumentCaptor<String> topicCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<ProfileUpdatedEvent> payloadCaptor = ArgumentCaptor.forClass(ProfileUpdatedEvent.class);
+
+        verify(profileUpdatedTemplate).send(topicCaptor.capture(), keyCaptor.capture(), payloadCaptor.capture());
+
+        assertThat(topicCaptor.getValue()).isEqualTo("profile-updated");
+        assertThat(keyCaptor.getValue()).isEqualTo("jane.doe@example.com");
+        assertThat(payloadCaptor.getValue().getEmail()).isEqualTo("jane.doe@example.com");
+        assertThat(payloadCaptor.getValue().getRole()).isEqualTo("JOB_SEEKER");
     }
 }

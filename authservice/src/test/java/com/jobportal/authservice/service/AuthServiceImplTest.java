@@ -152,7 +152,6 @@ class AuthServiceImplTest {
     @DisplayName("updatePassword: re-encodes the new password and saves the user")
     void updatePassword_success() {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("alice@example.com")
                 .currentPassword("oldPlain")
                 .newPassword("newPlainPassword")
                 .build();
@@ -161,7 +160,7 @@ class AuthServiceImplTest {
         when(passwordEncoder.matches("oldPlain", activeUser.getPassword())).thenReturn(true);
         when(passwordEncoder.encode("newPlainPassword")).thenReturn("$2a$10$newHash");
 
-        authService.updatePassword(request);
+        authService.updatePassword("alice@example.com", request);
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(userCaptor.capture());
@@ -174,14 +173,13 @@ class AuthServiceImplTest {
     @DisplayName("updatePassword: throws UserNotFoundException when email is unknown")
     void updatePassword_unknownEmail_throwsUserNotFoundException() {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("ghost@example.com")
                 .currentPassword("oldPlain")
                 .newPassword("newPlainPassword")
                 .build();
 
         when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> authService.updatePassword(request))
+        assertThatThrownBy(() -> authService.updatePassword("ghost@example.com", request))
                 .isInstanceOf(UserNotFoundException.class)
                 .hasMessageContaining("ghost@example.com");
 
@@ -193,7 +191,6 @@ class AuthServiceImplTest {
     @DisplayName("updatePassword: throws AuthenticationException when current password is wrong")
     void updatePassword_wrongCurrentPassword_throwsAuthenticationException() {
         PasswordUpdateRequest request = PasswordUpdateRequest.builder()
-                .email("alice@example.com")
                 .currentPassword("wrongOld")
                 .newPassword("newPlainPassword")
                 .build();
@@ -201,7 +198,7 @@ class AuthServiceImplTest {
         when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(activeUser));
         when(passwordEncoder.matches("wrongOld", activeUser.getPassword())).thenReturn(false);
 
-        assertThatThrownBy(() -> authService.updatePassword(request))
+        assertThatThrownBy(() -> authService.updatePassword("alice@example.com", request))
                 .isInstanceOf(AuthenticationException.class)
                 .hasMessageContaining("Current password is incorrect");
 

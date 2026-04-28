@@ -53,16 +53,17 @@ routes via `lb://SERVICE-NAME`. No security on the dashboard.
 Single public entry point. Spring Cloud Gateway (WebFlux).
 
 **Current routes:** (matched in declaration order; first match wins)
-- `/auth/**` → AUTH-SERVICE (no JWT filter; login/password change open)
+- `/auth/password` → AUTH-SERVICE (JWT filter applied)
+- `/auth/**` → AUTH-SERVICE (no filter; login is open)
 - `/api/users/public/**` → USER-SERVICE (no filter; public registration)
 - `/api/users/**` → USER-SERVICE (JWT filter)
 
 **Current behavior:** JWT filter validates HMAC-signed tokens, injects
-`X-User-Email` and `X-User-Role` headers downstream.
+`X-User-Email` and `X-User-Role` headers downstream. CORS is open to
+configured frontend origins (`CORS_ALLOWED_ORIGINS`).
 
 **Gaps to close:**
-- No CORS config (NFR-1.9)
-- No rate limiting (NFR-1.10)
+- No rate limiting (NFR-1.10) — blocked on Redis (Phase 2)
 - No correlation ID injection (NFR-4.2)
 - Routes for jobs/applications/resumes not yet added
 
@@ -71,7 +72,7 @@ Owns `auth_db`. Issues JWTs, manages credentials.
 
 **Endpoints:**
 - `POST /auth/login` — email + password → JWT
-- `PUT /auth/password` — change password (open per current security config)
+- `PUT /auth/password` — change password; requires JWT, target email derived from `X-User-Email` (a logged-in user can only change their own password)
 
 **Kafka consumers:**
 - `user-registration` → creates User row (stores `passwordHash` from event verbatim — User Service is the BCrypt origin)
@@ -88,17 +89,24 @@ Owns `userdb`. User profile CRUD.
 - `POST /api/users/public/register` — public registration
 - `GET /api/users` — list all users (ADMIN only)
 - `GET /api/users/me` — fetch caller's own profile
-- `PUT /api/users/me` — update caller's own profile
+- `PUT /api/users/me` — update caller's own basic profile
 - `DELETE /api/users/me` — soft-delete caller's own account
+- `PUT /api/users/me/skills` — replace skills array (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/experience` — replace work experience (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/education` — replace education (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/preferences` — replace job preferences (JOB_SEEKER, ADMIN)
+- `PUT /api/users/me/recruiter` — set recruiter profile (RECRUITER, ADMIN)
 
 Caller identity is taken from the `X-User-Email` header injected
-by the gateway. There are no `{email}`-parameterised endpoints —
-admin user-management against arbitrary emails is deferred to
-FR-1.11.
+by the gateway; role is taken from `X-User-Role`. There are no
+`{email}`-parameterised endpoints — admin user-management against
+arbitrary emails is deferred to FR-1.11. Sub-resources use full-replace
+semantics (PUT with the entire array/object) — no per-item endpoints.
 
 **Kafka producers:**
 - Publishes `UserRegistrationEvent` to `user-registration` on register
 - Publishes `UserDeleteEvent` to `delete-user` on delete
+- Publishes `ProfileUpdatedEvent` to `profile-updated` after every successful sub-resource save (carries a full snapshot of all profile fields; consumer dedupes on `(email, updatedAt)`)
 
 **Known issues:**
 - `[DEFERRED NFR-1.6]` Trusts `X-User-Email` and `X-User-Role` headers
@@ -113,10 +121,12 @@ FR-1.11.
   `GET /api/users` is ADMIN-only. Defense-in-depth — strength
   depends on NFR-1.6 header signing landing.
 
+**Recently built:**
+- `[BUILT FR-2.3..2.7]` Skills / experience / education / job-preferences /
+  recruiter sub-resources, all full-replace via PUT. Each save publishes
+  `ProfileUpdatedEvent` for Phase 2 Matching Service.
+
 **Planned additions:**
-- Skills, work experience, education sub-resources (FR-2.3 to FR-2.5)
-- Job preferences (FR-2.6)
-- Recruiter profile fields (FR-2.7)
 - `POST /api/users/profile/parse-resume` autofill endpoint (FR-4)
 
 ### Job Service `:8083` [PLANNED]
@@ -230,7 +240,7 @@ be wiped and rebuilt by replaying events.
 | `job-updated` `[PLANNED]` | Job Service | Matching Service |
 | `application-submitted` `[PLANNED]` | Application Service | Matching Service, (Notification later) |
 | `application-status-changed` `[PLANNED]` | Application Service | (Notification later) |
-| `profile-updated` `[PLANNED]` | User Service | Matching Service |
+| `profile-updated` | User Service | Matching Service `[PLANNED]` |
 
 All Kafka payloads live in `CommonModules` package
 `com.jobportal.kafka_events`. Consumers restrict trusted packages to
